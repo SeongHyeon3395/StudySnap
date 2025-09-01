@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import {
   View,
@@ -13,6 +14,7 @@ import {
   Alert,
 } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
+import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Animated, Easing, Dimensions } from 'react-native';
 
 type Props = { navigation?: any };
@@ -35,8 +37,7 @@ export default function LoginScreen({ navigation }: Props) {
   // 회원가입 입력
   const [suName, setSuName] = useState('');
   const [suEmail, setSuEmail] = useState('');
-  const [suBirthYear, setSuBirthYear] = useState('');
-  const [suBirthMD, setSuBirthMD] = useState('');
+  const [suBirth, setSuBirth] = useState(''); // YYYY.MM.DD
   const [suPhone, setSuPhone] = useState('');
   const [suPassword, setSuPassword] = useState('');
   const [suPassword2, setSuPassword2] = useState('');
@@ -47,24 +48,46 @@ export default function LoginScreen({ navigation }: Props) {
   const [findEmail, setFindEmail] = useState('');
   const [findPhone, setFindPhone] = useState('');
 
-  // THEME
-  const BG = '#FFFDF6';        // 아이보리 톤 배경
-  const CARD = '#FFF6D8';      // 카드 배경(미세하게 진한 톤)
-  const ACCENT = '#FFCF33';    // 포인트 옐로
-  const INK = '#0F172A';       // 진한 잉크(남색 계열)
-  const SUBTLE = '#475569';    // 보조 텍스트
-  const BORDER = '#E5E7EB';    // 경계선
-  const WHITE = '#FFFFFF';
+  // THEME — Neutral + Orange Accent + Deep Navy
+  const BG = '#F6F7FB';        // 뉴트럴 배경(차분한 라이트 그레이-블루)
+  const SURFACE = '#FFFFFF';   // 서피스(카드/입력 배경)
+  const CARD_SOFT = '#FDFEFE'; // 아주 옅은 서피스 톤
+  const ACCENT = '#FF8A00';    // 포인트 오렌지(에너지/동기부여)
+  const ACCENT_SOFT = '#FFF1E0'; // 오렌지 소프트 배경
+  const INK = '#0B1220';       // 진한 네이비 텍스트(가독성)
+  const SUBTLE = '#5B667A';    // 보조 텍스트(중간 그레이-블루)
+  const BORDER = '#E6E8EE';    // 경계선(뉴트럴 라이트)
+
+  const [showBackButton, setShowBackButton] = useState(false);
+  const [animating, setAnimating] = useState(false);
 
   const handleNext = () => {
     if (phase === 'login') return;
     setPhase('login');
+    setShowBackButton(true); // 즉시 표시
+    setAnimating(true); // 애니메이션 진행
     Animated.timing(translateX, {
       toValue: -screenWidth,
       duration: 450,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true,
-    }).start();
+    }).start(() => setAnimating(false));
+  };
+
+  const handleBack = () => {
+    if (phase === 'intro') return;
+    // 누르자마자 숨김
+    setShowBackButton(false);
+    setAnimating(true);
+    Animated.timing(translateX, {
+      toValue: 0,
+      duration: 450,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => {
+      setPhase('intro');
+      setAnimating(false);
+    });
   };
 
   const onLoginPress = () => {
@@ -88,13 +111,43 @@ export default function LoginScreen({ navigation }: Props) {
     Alert.alert('인증', '인증코드를 전송했습니다. 6자리 코드를 입력하세요.');
   };
 
+  const formatPhone = (raw: string) => {
+    const digits = raw.replace(/\D/g, '');
+    if (digits.startsWith('02')) {
+      // 서울번호 패턴 (선택적 확장) -> 02-XXXX-XXXX or 02-XXX-XXXX
+      if (digits.length <= 2) return digits;
+      if (digits.length <= 5) return digits.slice(0,2) + '-' + digits.slice(2);
+      if (digits.length <= 9) return digits.slice(0,2) + '-' + digits.slice(2, digits.length-4) + '-' + digits.slice(-4);
+      return digits.slice(0,2) + '-' + digits.slice(2, digits.length-4) + '-' + digits.slice(-4, digits.length);
+    }
+    // 휴대폰 (010 등) 3-4-4 기본
+    if (digits.length <= 3) return digits;
+    if (digits.length <= 7) return digits.slice(0,3) + '-' + digits.slice(3);
+    return digits.slice(0,3) + '-' + digits.slice(3,7) + '-' + digits.slice(7,11);
+  };
+
+  const formatBirth = (raw: string) => {
+    const digits = raw.replace(/\D/g, '').slice(0,8); // YYYYMMDD
+    if (digits.length <= 4) return digits;
+    if (digits.length <= 6) return digits.slice(0,4) + '.' + digits.slice(4);
+    return digits.slice(0,4) + '.' + digits.slice(4,6) + '.' + digits.slice(6,8);
+  };
+
   const onSignUp = () => {
-    if (!suName || !suEmail || !suBirthYear || !suBirthMD || !suPhone) {
+    if (!suName || !suEmail || !suBirth || !suPhone) {
       Alert.alert('회원가입', '모든 필드를 입력해주세요.');
       return;
     }
-    if (suBirthYear.length !== 4 || suBirthMD.length !== 4) {
-      Alert.alert('회원가입', '생년은 YYYY, 생일은 MMDD 형식으로 입력해주세요.');
+    if (suBirth.length !== 10) { // YYYY.MM.DD
+      Alert.alert('회원가입', '생년월일을 YYYY.MM.DD 형식으로 입력해주세요.');
+      return;
+    }
+    const birthDigits = suBirth.replace(/\D/g, '');
+    const by = parseInt(birthDigits.slice(0,4),10);
+    const bm = parseInt(birthDigits.slice(4,6),10);
+    const bd = parseInt(birthDigits.slice(6,8),10);
+    if (by < 1900 || by > 2100 || bm < 1 || bm > 12 || bd < 1 || bd > 31) {
+      Alert.alert('회원가입', '생년월일 값이 올바르지 않습니다.');
       return;
     }
     if (!suPassword || suPassword.length < 6) {
@@ -119,7 +172,7 @@ export default function LoginScreen({ navigation }: Props) {
     <SafeAreaView style={{ flex: 1, backgroundColor: BG }}>
       <StatusBar barStyle="dark-content" backgroundColor={BG} />
 
-      {/* 헤더(중앙 제목) - 상태표시줄과 겹치지 않도록 SafeArea + 추가 패딩 */}
+      {/* 헤더 — 가운데 타이틀, 상태바 겹침 방지 */}
       <View
         style={{
           paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0,
@@ -128,22 +181,24 @@ export default function LoginScreen({ navigation }: Props) {
           borderBottomWidth: 1,
         }}
       >
-        <View
-          style={{
-            paddingHorizontal: 20,
-            paddingVertical: 12,
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center', // 중앙 정렬
-          }}
-        >
-          <Text style={{ fontSize: 18, fontWeight: '800', color: INK, letterSpacing: 0.3 }}>
-            StudySnap
-          </Text>
+        <View style={{ height: 52, justifyContent: 'center' }}>
+          {/* 뒤로가기 버튼 (로그인 화면에서만) */}
+          {phase === 'login' && showBackButton && (
+            <TouchableOpacity
+              onPress={handleBack}
+              style={{ position: 'absolute', left: 8, top: 8, padding: 8, borderRadius: 20 }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <MaterialIcons name="arrow-back-ios" size={22} color={ACCENT} />
+            </TouchableOpacity>
+          )}
+          <View style={{ alignItems: 'center' }}>
+            <Text style={{ fontSize: 18, fontWeight: '900', color: ACCENT, letterSpacing: 0.3 }}>찍공</Text>
+          </View>
         </View>
       </View>
 
-      {/* 본문 슬라이더 */}
+      {/* 본문 슬라이더(인트로 → 로그인) */}
       <View style={{ flex: 1, overflow: 'hidden', backgroundColor: BG }}>
         <Animated.View
           style={{
@@ -153,167 +208,225 @@ export default function LoginScreen({ navigation }: Props) {
             transform: [{ translateX }],
           }}
         >
-          {/* 인트로 페이지 */}
-          <ScrollView
-            style={{ width: screenWidth }}
-            contentContainerStyle={{
-              paddingHorizontal: 22,
-              paddingTop: 22,
-              paddingBottom: 30,
-              backgroundColor: BG,
-              minHeight: '100%',
-            }}
-          >
-          {/* 카드 1 */}
-          <View
-            style={{
-              backgroundColor: CARD,
-              borderWidth: 1,
-              borderColor: ACCENT,
-              borderRadius: 18,
-              padding: 20,
-              marginBottom: 18,
-              flexDirection: 'row',
-              alignItems: 'center',
-              shadowColor: '#000',
-              shadowOpacity: 0.06,
-              shadowRadius: 8,
-              elevation: 2,
-            }}
-          >
-            <View
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: 14,
-                backgroundColor: WHITE,
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginRight: 14,
-                borderWidth: 1,
-                borderColor: ACCENT,
+          {/* ===== 인트로 페이지 (한 화면에 3카드) ===== */}
+          <View style={{ width: screenWidth, position: 'relative', flex: 1 }}>
+            <ScrollView
+              style={{ flex: 1 }}
+              contentContainerStyle={{
+                paddingHorizontal: 22,
+                paddingTop: 22,
+                paddingBottom: 140, /* 버튼 공간 확보 */
+                backgroundColor: BG,
+                minHeight: '100%',
               }}
             >
-              <MaterialIcons name="camera-alt" size={30} color={ACCENT} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: '900', color: INK }}>
-                한 번의 촬영으로 바로 공부
-              </Text>
-              <Text style={{ fontSize: 14, lineHeight: 22, color: SUBTLE, marginTop: 8 }}>
-                교재·필기 사진을 찍으면 즉시 텍스트로 정리됩니다.
-              </Text>
-            </View>
-          </View>
-
-          {/* 카드 2 */}
-          <View
-            style={{
-              backgroundColor: CARD,
-              borderWidth: 1,
-              borderColor: ACCENT,
-              borderRadius: 18,
-              padding: 20,
-              marginBottom: 18,
-              flexDirection: 'row',
-              alignItems: 'center',
-              shadowColor: '#000',
-              shadowOpacity: 0.06,
-              shadowRadius: 8,
-              elevation: 2,
-            }}
-          >
+            {/* 카드 1: 촬영 → 공부 */}
             <View
               style={{
-                width: 64,
-                height: 64,
-                borderRadius: 14,
-                backgroundColor: WHITE,
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginRight: 14,
+                backgroundColor: SURFACE,
                 borderWidth: 1,
-                borderColor: ACCENT,
-              }}
-            >
-              <MaterialIcons name="help-outline" size={30} color={ACCENT} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: '900', color: INK }}>
-                모르는 건 즉시 질문
-              </Text>
-              <Text style={{ fontSize: 14, lineHeight: 22, color: SUBTLE, marginTop: 8 }}>
-                한줄요약·쉬운설명·예시를 한 탭으로 받아보세요.
-              </Text>
-            </View>
-          </View>
-
-          {/* 카드 3 */}
-          <View
-            style={{
-              backgroundColor: CARD,
-              borderWidth: 1,
-              borderColor: ACCENT,
-              borderRadius: 18,
-              padding: 20,
-              marginBottom: 8,
-              flexDirection: 'row',
-              alignItems: 'center',
-              shadowColor: '#000',
-              shadowOpacity: 0.06,
-              shadowRadius: 8,
-              elevation: 2,
-            }}
-          >
-            <View
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: 14,
-                backgroundColor: WHITE,
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginRight: 14,
-                borderWidth: 1,
-                borderColor: ACCENT,
-              }}
-            >
-              <MaterialIcons name="quiz" size={30} color={ACCENT} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: '900', color: INK }}>
-                5문항 스피드 퀴즈
-              </Text>
-              <Text style={{ fontSize: 14, lineHeight: 22, color: SUBTLE, marginTop: 8 }}>
-                약점을 빠르게 점검하고 기억을 고정합니다.
-              </Text>
-            </View>
-          </View>
-
-          {/* CTA: 다음 (본문 하단에만 배치) */}
-          <View style={{ height: 18 }} />
-            <TouchableOpacity
-              onPress={handleNext}
-              activeOpacity={0.9}
-              style={{
-                height: 54,
-                backgroundColor: ACCENT,
-                borderRadius: 16,
-                alignItems: 'center',
-                justifyContent: 'center',
+                borderColor: BORDER,
+                borderRadius: 20,
+                padding: 24,
+                marginBottom: 18,
                 flexDirection: 'row',
+                alignItems: 'center',
                 shadowColor: '#000',
-                shadowOpacity: 0.1,
-                shadowRadius: 8,
-                elevation: 3,
+                shadowOpacity: 0.02,
+                shadowRadius: 10,
+                elevation: 0.5,
               }}
             >
-              <Text style={{ fontSize: 16, fontWeight: '900', color: INK, marginRight: 6 }}>다음</Text>
-              <MaterialIcons name="arrow-forward" size={20} color={INK} />
-            </TouchableOpacity>
-          </ScrollView>
+              <View
+                style={{
+                  width: 76,
+                  height: 76,
+                  borderRadius: 16,
+                  backgroundColor: ACCENT_SOFT,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginRight: 16,
+                  borderWidth: 1,
+                  borderColor: BORDER,
+                }}
+              >
+                <MaterialIcons name="photo-camera" size={32} color={ACCENT} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: '900', color: INK }}>
+                  한 번의 촬영으로 바로 공부
+                </Text>
+                <Text style={{ fontSize: 14, lineHeight: 22, color: SUBTLE, marginTop: 8 }}>
+                  교재·필기 사진을 찍으면 즉시 텍스트로 정리됩니다.
+                </Text>
+              </View>
+            </View>
 
-          {/* 로그인 페이지 */}
+            {/* 카드 2: 즉시 질문 */}
+            <View
+              style={{
+                backgroundColor: SURFACE,
+                borderWidth: 1,
+                borderColor: BORDER,
+                borderRadius: 20,
+                padding: 24,
+                marginBottom: 18,
+                flexDirection: 'row',
+                alignItems: 'center',
+                shadowColor: '#000',
+                shadowOpacity: 0.02,
+                shadowRadius: 10,
+                elevation: 0.5,
+              }}
+            >
+              <View
+                style={{
+                  width: 76,
+                  height: 76,
+                  borderRadius: 16,
+                  backgroundColor: ACCENT_SOFT,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginRight: 16,
+                  borderWidth: 1,
+                  borderColor: BORDER,
+                }}
+              >
+                <MaterialIcons name="help-outline" size={32} color={ACCENT} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: '900', color: INK }}>
+                  모르는 건 즉시 질문
+                </Text>
+                <Text style={{ fontSize: 14, lineHeight: 22, color: SUBTLE, marginTop: 8 }}>
+                  한줄요약·쉬운설명·예시를 한 탭으로 받아보세요.
+                </Text>
+              </View>
+            </View>
+
+            {/* 카드 3: 스피드 퀴즈 */}
+            <View
+              style={{
+                backgroundColor: SURFACE,
+                borderWidth: 1,
+                borderColor: BORDER,
+                borderRadius: 20,
+                padding: 24,
+                marginBottom: 18,
+                flexDirection: 'row',
+                alignItems: 'center',
+                shadowColor: '#000',
+                shadowOpacity: 0.02,
+                shadowRadius: 10,
+                elevation: 0.5,
+              }}
+            >
+              <View
+                style={{
+                  width: 76,
+                  height: 76,
+                  borderRadius: 16,
+                  backgroundColor: ACCENT_SOFT,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginRight: 16,
+                  borderWidth: 1,
+                  borderColor: BORDER,
+                }}
+              >
+                <MaterialCommunityIcons name="flash-outline" size={40} color={ACCENT} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: '900', color: INK }}>
+                  5문항 스피드 퀴즈
+                </Text>
+                <Text style={{ fontSize: 14, lineHeight: 22, color: SUBTLE, marginTop: 8 }}>
+                  약점을 빠르게 점검하고 기억을 고정합니다.
+                </Text>
+              </View>
+            </View>
+
+            <View
+              style={{
+                backgroundColor: SURFACE,
+                borderWidth: 1,
+                borderColor: BORDER,
+                borderRadius: 20,
+                padding: 24,
+                marginBottom: 18,
+                flexDirection: 'row',
+                alignItems: 'center',
+                shadowColor: '#000',
+                shadowOpacity: 0.02,
+                shadowRadius: 10,
+                elevation: 0.5,
+              }}
+            >
+              <View
+                style={{
+                  width: 76,
+                  height: 76,
+                  borderRadius: 16,
+                  backgroundColor: ACCENT_SOFT,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginRight: 16,
+                  borderWidth: 1,
+                  borderColor: BORDER,
+                }}
+              >
+                <MaterialCommunityIcons name="robot-outline" size={36} color={ACCENT} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 20, lineHeight: 26, fontWeight: '900', color: INK }}>
+                  AI 문제 생성
+                </Text>
+                <Text style={{ fontSize: 14, lineHeight: 22, color: SUBTLE, marginTop: 8 }}>
+                  AI로 생성해준 무작위 문제를 풀어보세요.
+                </Text>
+              </View>
+            </View>
+
+            {/* CTA: 다음 */}
+            </ScrollView>
+            {/* 고정 하단 NEXT 버튼 */}
+            {phase === 'intro' && (
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  paddingHorizontal: 22,
+                  paddingBottom: Platform.OS === 'ios' ? 28 : 18,
+                  paddingTop: 10,
+                  backgroundColor: BG, // 배경색 통일
+                }}
+              >
+                <TouchableOpacity
+                  onPress={handleNext}
+                  activeOpacity={0.9}
+                  style={{
+                    height: 56,
+                    backgroundColor: ACCENT,
+                    borderRadius: 18,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexDirection: 'row',
+                    shadowColor: '#000',
+                    shadowOpacity: 0.02,
+                    shadowRadius: 10,
+                    elevation: 0.5,
+                  }}
+                >
+                  <Text style={{ fontSize: 17, fontWeight: '900', color: '#1A1A1A', marginRight: 6 }}>다음</Text>
+                  <MaterialIcons name="arrow-forward" size={22} color={'#1A1A1A'} />
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          {/* ===== 로그인 페이지 ===== */}
           <KeyboardAvoidingView
             style={{ width: screenWidth, backgroundColor: BG }}
             behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -323,122 +436,150 @@ export default function LoginScreen({ navigation }: Props) {
               contentContainerStyle={{
                 paddingHorizontal: 24,
                 paddingTop: 26,
-                paddingBottom: 40,
+                paddingBottom: 80,
                 backgroundColor: BG,
                 minHeight: '100%',
+                flexGrow: 1,
+                justifyContent: 'center',
               }}
               keyboardShouldPersistTaps="handled"
             >
-            {/* 제목/부제목 중앙 정렬 */}
-            <Text style={{ fontSize: 24, fontWeight: '900', color: INK, textAlign: 'center' }}>로그인</Text>
-            <Text style={{ fontSize: 13, color: SUBTLE, marginTop: 8, textAlign: 'center' }}>
-              이메일과 비밀번호를 입력하세요.
-            </Text>
+              {/* 제목/부제목 */}
+              <Text style={{ fontSize: 24, fontWeight: '900', color: INK, textAlign: 'center' }}>로그인</Text>
+              <Text style={{ fontSize: 13, color: SUBTLE, marginTop: 8, textAlign: 'center' }}>
+                이메일과 비밀번호를 입력하세요.
+              </Text>
 
-            {/* 이메일 */}
-            <View style={{ marginTop: 18 }}>
-              <Text style={{ fontSize: 12, color: SUBTLE, marginBottom: 8 }}>이메일</Text>
-              <TextInput
-                placeholder="name@example.com"
-                placeholderTextColor="#9CA3AF"
-                autoCapitalize="none"
-                keyboardType="email-address"
-                value={email}
-                onChangeText={setEmail}
-                style={{
-                  height: 50,
-                  paddingHorizontal: 14,
-                  borderWidth: 1,
-                  borderColor: BORDER,
-                  borderRadius: 14,
-                  backgroundColor: WHITE,
-                  color: INK,
-                }}
-              />
-            </View>
-
-            {/* 비밀번호 (이메일과 간격 축소) */}
-            <View style={{ marginTop: 10 }}>
-              <Text style={{ fontSize: 12, color: SUBTLE, marginBottom: 8 }}>비밀번호</Text>
-              <View
-                style={{
-                  height: 50,
-                  borderWidth: 1,
-                  borderColor: BORDER,
-                  borderRadius: 14,
-                  backgroundColor: WHITE,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  paddingLeft: 14,
-                  paddingRight: 8,
-                }}
-              >
+              {/* 이메일 */}
+              <View style={{ marginTop: 18 }}>
+                <Text style={{ fontSize: 12, color: SUBTLE, marginBottom: 8 }}>이메일</Text>
                 <TextInput
-                  placeholder="******"
+                  placeholder="name@example.com"
                   placeholderTextColor="#9CA3AF"
-                  secureTextEntry={!pwVisible}
-                  value={password}
-                  onChangeText={setPassword}
-                  style={{ flex: 1, color: INK }}
-                />
-                <TouchableOpacity
-                  onPress={() => setPwVisible((v) => !v)}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  value={email}
+                  onChangeText={setEmail}
                   style={{
-                    height: 36,
-                    width: 36,
+                    height: 50,
+                    paddingHorizontal: 14,
+                    borderWidth: 1,
+                    borderColor: BORDER,
+                    borderRadius: 14,
+                    backgroundColor: SURFACE,
+                    color: INK,
+                  }}
+                />
+              </View>
+
+              {/* 비밀번호 (이메일과 간격 축소) */}
+              <View style={{ marginTop: 8 }}>
+                <Text style={{ fontSize: 12, color: SUBTLE, marginBottom: 8 }}>비밀번호</Text>
+                <View
+                  style={{
+                    height: 50,
+                    borderWidth: 1,
+                    borderColor: BORDER,
+                    borderRadius: 14,
+                    backgroundColor: SURFACE,
+                    flexDirection: 'row',
                     alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: 18,
+                    paddingLeft: 14,
+                    paddingRight: 8,
                   }}
                 >
-                  <MaterialIcons name={pwVisible ? 'visibility' : 'visibility-off'} size={22} color={SUBTLE} />
+                  <TextInput
+                    placeholder="******"
+                    placeholderTextColor="#9CA3AF"
+                    secureTextEntry={!pwVisible}
+                    value={password}
+                    onChangeText={setPassword}
+                    style={{ flex: 1, color: INK }}
+                  />
+                  <TouchableOpacity
+                    onPress={() => setPwVisible((v) => !v)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={{
+                      height: 36,
+                      width: 36,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: 18,
+                    }}
+                  >
+                    <MaterialIcons
+                      name={pwVisible ? 'visibility' : 'visibility-off'}
+                      size={22}
+                      color={SUBTLE}
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* 로그인 버튼 */}
+              <TouchableOpacity
+                onPress={onLoginPress}
+                activeOpacity={0.9}
+                style={{
+                  height: 52,
+                  backgroundColor: ACCENT,
+                  borderRadius: 16,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginTop: 22,
+                  shadowColor: '#000',
+                  shadowOpacity: 0.02,
+                  shadowRadius: 10,
+                  elevation: 0.5,
+                }}
+              >
+                <Text style={{ fontSize: 16, fontWeight: '900', color: '#1A1A1A' }}>로그인</Text>
+              </TouchableOpacity>
+
+              {/* 하단 링크 */}
+              <View
+                style={{
+                  marginTop: 18,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <TouchableOpacity onPress={() => setShowSignUp(true)} activeOpacity={0.7}>
+                  <Text style={{ fontSize: 13, color: INK, fontWeight: '800' }}>회원가입</Text>
+                </TouchableOpacity>
+                <Text style={{ color: '#D1D5DB', marginHorizontal: 10 }}>|</Text>
+                <TouchableOpacity onPress={() => setShowFindAccount(true)} activeOpacity={0.7}>
+                  <Text style={{ fontSize: 13, color: INK, fontWeight: '800' }}>계정 찾기</Text>
+                </TouchableOpacity>
+                <Text style={{ color: '#D1D5DB', marginHorizontal: 10 }}>|</Text>
+                <TouchableOpacity onPress={() => setShowFindPassword(true)} activeOpacity={0.7}>
+                  <Text style={{ fontSize: 13, color: INK, fontWeight: '800' }}>비밀번호 찾기</Text>
                 </TouchableOpacity>
               </View>
-            </View>
-
-            {/* 로그인 버튼 (중앙 정렬 느낌을 위해 가로 꽉 채우고 텍스트 중앙) */}
-            <TouchableOpacity
-              onPress={onLoginPress}
-              activeOpacity={0.9}
-              style={{
-                height: 52,
-                backgroundColor: ACCENT,
-                borderRadius: 16,
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginTop: 22,
-                shadowColor: '#000',
-                shadowOpacity: 0.1,
-                shadowRadius: 8,
-                elevation: 3,
-              }}
-            >
-              <Text style={{ fontSize: 16, fontWeight: '900', color: INK }}>로그인</Text>
-            </TouchableOpacity>
-
-            {/* 하단 링크 */}
-            <View
-              style={{
-                marginTop: 18,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <TouchableOpacity onPress={() => setShowSignUp(true)} activeOpacity={0.7}>
-                <Text style={{ fontSize: 13, color: INK, fontWeight: '800' }}>회원가입</Text>
-              </TouchableOpacity>
-              <Text style={{ color: '#D1D5DB', marginHorizontal: 10 }}>|</Text>
-              <TouchableOpacity onPress={() => setShowFindAccount(true)} activeOpacity={0.7}>
-                <Text style={{ fontSize: 13, color: INK, fontWeight: '800' }}>계정 찾기</Text>
-              </TouchableOpacity>
-              <Text style={{ color: '#D1D5DB', marginHorizontal: 10 }}>|</Text>
-              <TouchableOpacity onPress={() => setShowFindPassword(true)} activeOpacity={0.7}>
-                <Text style={{ fontSize: 13, color: INK, fontWeight: '800' }}>비밀번호 찾기</Text>
-              </TouchableOpacity>
-            </View>
+              <View style={{ height: 60 }} />
             </ScrollView>
+            {/* 테스트 이동 버튼 */}
+            {phase === 'login' && (
+              <TouchableOpacity
+                onPress={() => navigation?.replace?.('Main')}
+                style={{
+                  position: 'absolute',
+                  bottom: 20,
+                  right: 20,
+                  backgroundColor: ACCENT,
+                  paddingHorizontal: 14,
+                  paddingVertical: 10,
+                  borderRadius: 14,
+                  shadowColor: '#000',
+                  shadowOpacity: 0.02,
+                  shadowRadius: 10,
+                  elevation: 0.5,
+                }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: '800', color: '#1A1A1A' }}>로그인(테스트)</Text>
+              </TouchableOpacity>
+            )}
           </KeyboardAvoidingView>
         </Animated.View>
       </View>
@@ -469,7 +610,7 @@ export default function LoginScreen({ navigation }: Props) {
                 style={{
                   paddingHorizontal: 12,
                   paddingVertical: 6,
-                  backgroundColor: '#FFECA6',
+                  backgroundColor: '#FFE4C2',
                   borderRadius: 999,
                   flexDirection: 'row',
                   alignItems: 'center',
@@ -481,7 +622,10 @@ export default function LoginScreen({ navigation }: Props) {
             </View>
           </View>
 
-          <KeyboardAvoidingView style={{ flex: 1, backgroundColor: BG }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <KeyboardAvoidingView
+            style={{ flex: 1, backgroundColor: BG }}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
             <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 18, backgroundColor: BG }}>
               {/* 이름 */}
               <View style={{ marginTop: 10 }}>
@@ -497,7 +641,7 @@ export default function LoginScreen({ navigation }: Props) {
                     borderWidth: 1,
                     borderColor: BORDER,
                     borderRadius: 14,
-                    backgroundColor: WHITE,
+                    backgroundColor: SURFACE,
                     color: INK,
                   }}
                 />
@@ -519,54 +663,32 @@ export default function LoginScreen({ navigation }: Props) {
                     borderWidth: 1,
                     borderColor: BORDER,
                     borderRadius: 14,
-                    backgroundColor: WHITE,
+                    backgroundColor: SURFACE,
                     color: INK,
                   }}
                 />
               </View>
 
               {/* 생년/생일 */}
-              <View style={{ marginTop: 12, flexDirection: 'row' }}>
-                <View style={{ flex: 1, marginRight: 12 }}>
-                  <Text style={{ fontSize: 12, color: SUBTLE, marginBottom: 8 }}>태어난 년도 (YYYY)</Text>
-                  <TextInput
-                    placeholder="2001"
-                    placeholderTextColor="#9CA3AF"
-                    keyboardType="number-pad"
-                    maxLength={4}
-                    value={suBirthYear}
-                    onChangeText={setSuBirthYear}
-                    style={{
-                      height: 50,
-                      paddingHorizontal: 14,
-                      borderWidth: 1,
-                      borderColor: BORDER,
-                      borderRadius: 14,
-                      backgroundColor: WHITE,
-                      color: INK,
-                    }}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 12, color: SUBTLE, marginBottom: 8 }}>생일 (MMDD)</Text>
-                  <TextInput
-                    placeholder="0315"
-                    placeholderTextColor="#9CA3AF"
-                    keyboardType="number-pad"
-                    maxLength={4}
-                    value={suBirthMD}
-                    onChangeText={setSuBirthMD}
-                    style={{
-                      height: 50,
-                      paddingHorizontal: 14,
-                      borderWidth: 1,
-                      borderColor: BORDER,
-                      borderRadius: 14,
-                      backgroundColor: WHITE,
-                      color: INK,
-                    }}
-                  />
-                </View>
+              <View style={{ marginTop: 12 }}>
+                <Text style={{ fontSize: 12, color: SUBTLE, marginBottom: 8 }}>생년월일 (YYYY.MM.DD)</Text>
+                <TextInput
+                  placeholder="2002.03.10"
+                  placeholderTextColor="#9CA3AF"
+                  keyboardType="number-pad"
+                  maxLength={10}
+                  value={suBirth}
+                  onChangeText={(t) => setSuBirth(formatBirth(t))}
+                  style={{
+                    height: 50,
+                    paddingHorizontal: 14,
+                    borderWidth: 1,
+                    borderColor: BORDER,
+                    borderRadius: 14,
+                    backgroundColor: SURFACE,
+                    color: INK,
+                  }}
+                />
               </View>
 
               {/* 비밀번호/확인 */}
@@ -584,7 +706,7 @@ export default function LoginScreen({ navigation }: Props) {
                     borderWidth: 1,
                     borderColor: BORDER,
                     borderRadius: 14,
-                    backgroundColor: WHITE,
+                    backgroundColor: SURFACE,
                     color: INK,
                   }}
                 />
@@ -603,7 +725,7 @@ export default function LoginScreen({ navigation }: Props) {
                     borderWidth: 1,
                     borderColor: BORDER,
                     borderRadius: 14,
-                    backgroundColor: WHITE,
+                    backgroundColor: SURFACE,
                     color: INK,
                   }}
                 />
@@ -614,11 +736,11 @@ export default function LoginScreen({ navigation }: Props) {
                 <Text style={{ fontSize: 12, color: SUBTLE, marginBottom: 8 }}>전화번호</Text>
                 <View style={{ flexDirection: 'row' }}>
                   <TextInput
-                    placeholder="01012345678"
+                    placeholder="010-0000-0000"
                     placeholderTextColor="#9CA3AF"
                     keyboardType="phone-pad"
                     value={suPhone}
-                    onChangeText={setSuPhone}
+                    onChangeText={(t) => setSuPhone(formatPhone(t))}
                     style={{
                       flex: 1,
                       height: 50,
@@ -626,7 +748,7 @@ export default function LoginScreen({ navigation }: Props) {
                       borderWidth: 1,
                       borderColor: BORDER,
                       borderRadius: 14,
-                      backgroundColor: WHITE,
+                      backgroundColor: SURFACE,
                       color: INK,
                       marginRight: 10,
                     }}
@@ -643,13 +765,13 @@ export default function LoginScreen({ navigation }: Props) {
                       justifyContent: 'center',
                       flexDirection: 'row',
                       shadowColor: '#000',
-                      shadowOpacity: 0.08,
-                      shadowRadius: 6,
-                      elevation: 2,
+                      shadowOpacity: 0.02,
+                      shadowRadius: 10,
+                      elevation: 0.5,
                     }}
                   >
-                    <MaterialIcons name="sms" size={18} color={INK} />
-                    <Text style={{ color: INK, fontWeight: '900', marginLeft: 6 }}>인증코드 전송</Text>
+                    <MaterialIcons name="sms" size={18} color={'#1A1A1A'} />
+                    <Text style={{ color: '#1A1A1A', fontWeight: '900', marginLeft: 6 }}>인증코드 전송</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -671,7 +793,7 @@ export default function LoginScreen({ navigation }: Props) {
                       borderWidth: 1,
                       borderColor: BORDER,
                       borderRadius: 14,
-                      backgroundColor: WHITE,
+                      backgroundColor: SURFACE,
                       color: INK,
                       letterSpacing: 4,
                       textAlign: 'center',
@@ -692,12 +814,12 @@ export default function LoginScreen({ navigation }: Props) {
                   justifyContent: 'center',
                   marginTop: 22,
                   shadowColor: '#000',
-                  shadowOpacity: 0.1,
-                  shadowRadius: 8,
-                  elevation: 3,
+                  shadowOpacity: 0.02,
+                  shadowRadius: 10,
+                  elevation: 0.5,
                 }}
               >
-                <Text style={{ fontSize: 16, fontWeight: '900', color: INK }}>가입하기</Text>
+                <Text style={{ fontSize: 16, fontWeight: '900', color: '#1A1A1A' }}>가입하기</Text>
               </TouchableOpacity>
 
               <View style={{ height: 20 }} />
@@ -732,7 +854,7 @@ export default function LoginScreen({ navigation }: Props) {
                 style={{
                   paddingHorizontal: 12,
                   paddingVertical: 6,
-                  backgroundColor: '#FFECA6',
+                  backgroundColor: '#FFE4C2',
                   borderRadius: 999,
                   flexDirection: 'row',
                   alignItems: 'center',
@@ -744,7 +866,10 @@ export default function LoginScreen({ navigation }: Props) {
             </View>
           </View>
 
-          <KeyboardAvoidingView style={{ flex: 1, backgroundColor: BG }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <KeyboardAvoidingView
+            style={{ flex: 1, backgroundColor: BG }}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
             <View style={{ paddingHorizontal: 24, paddingTop: 18 }}>
               <Text style={{ fontSize: 13, color: SUBTLE }}>
                 등록된 전화번호 또는 이메일을 입력하면 계정을 찾아드려요.
@@ -753,18 +878,18 @@ export default function LoginScreen({ navigation }: Props) {
               <View style={{ marginTop: 16 }}>
                 <Text style={{ fontSize: 12, color: SUBTLE, marginBottom: 8 }}>전화번호</Text>
                 <TextInput
-                  placeholder="01012345678"
+                  placeholder="010-0000-0000"
                   placeholderTextColor="#9CA3AF"
                   keyboardType="phone-pad"
                   value={findPhone}
-                  onChangeText={setFindPhone}
+                  onChangeText={(t) => setFindPhone(formatPhone(t))}
                   style={{
                     height: 50,
                     paddingHorizontal: 14,
                     borderWidth: 1,
                     borderColor: BORDER,
                     borderRadius: 14,
-                    backgroundColor: WHITE,
+                    backgroundColor: SURFACE,
                     color: INK,
                   }}
                 />
@@ -785,7 +910,7 @@ export default function LoginScreen({ navigation }: Props) {
                     borderWidth: 1,
                     borderColor: BORDER,
                     borderRadius: 14,
-                    backgroundColor: WHITE,
+                    backgroundColor: SURFACE,
                     color: INK,
                   }}
                 />
@@ -802,12 +927,12 @@ export default function LoginScreen({ navigation }: Props) {
                   justifyContent: 'center',
                   marginTop: 22,
                   shadowColor: '#000',
-                  shadowOpacity: 0.1,
-                  shadowRadius: 8,
-                  elevation: 3,
+                  shadowOpacity: 0.02,
+                  shadowRadius: 10,
+                  elevation: 0.5,
                 }}
               >
-                <Text style={{ fontSize: 16, fontWeight: '900', color: INK }}>확인</Text>
+                <Text style={{ fontSize: 16, fontWeight: '900', color: '#1A1A1A' }}>확인</Text>
               </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>
@@ -840,7 +965,7 @@ export default function LoginScreen({ navigation }: Props) {
                 style={{
                   paddingHorizontal: 12,
                   paddingVertical: 6,
-                  backgroundColor: '#FFECA6',
+                  backgroundColor: '#FFE4C2',
                   borderRadius: 999,
                   flexDirection: 'row',
                   alignItems: 'center',
@@ -852,7 +977,10 @@ export default function LoginScreen({ navigation }: Props) {
             </View>
           </View>
 
-          <KeyboardAvoidingView style={{ flex: 1, backgroundColor: BG }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <KeyboardAvoidingView
+            style={{ flex: 1, backgroundColor: BG }}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
             <View style={{ paddingHorizontal: 24, paddingTop: 18 }}>
               <Text style={{ fontSize: 13, color: SUBTLE }}>
                 가입하신 이메일을 입력하면 비밀번호 재설정 링크를 보내드려요.
@@ -873,7 +1001,7 @@ export default function LoginScreen({ navigation }: Props) {
                     borderWidth: 1,
                     borderColor: BORDER,
                     borderRadius: 14,
-                    backgroundColor: WHITE,
+                    backgroundColor: SURFACE,
                     color: INK,
                   }}
                 />
@@ -896,12 +1024,12 @@ export default function LoginScreen({ navigation }: Props) {
                   justifyContent: 'center',
                   marginTop: 22,
                   shadowColor: '#000',
-                  shadowOpacity: 0.1,
-                  shadowRadius: 8,
-                  elevation: 3,
+                  shadowOpacity: 0.02,
+                  shadowRadius: 10,
+                  elevation: 0.5,
                 }}
               >
-                <Text style={{ fontSize: 16, fontWeight: '900', color: INK }}>재설정 링크 보내기</Text>
+                <Text style={{ fontSize: 16, fontWeight: '900', color: '#1A1A1A' }}>재설정 링크 보내기</Text>
               </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>
