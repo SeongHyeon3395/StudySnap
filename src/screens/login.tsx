@@ -48,6 +48,9 @@ export default function LoginScreen({ navigation }: Props) {
   // 계정/비번 찾기
   const [findEmail, setFindEmail] = useState('');
   const [findPhone, setFindPhone] = useState('');
+  // 계정 찾기 전용 인증 상태
+  const [findCodeSent, setFindCodeSent] = useState(false);
+  const [findOtp, setFindOtp] = useState('');
 
   // THEME — Neutral + Orange Accent + Deep Navy
   const BG = '#F6F7FB';        // 뉴트럴 배경(차분한 라이트 그레이-블루)
@@ -145,6 +148,32 @@ export default function LoginScreen({ navigation }: Props) {
     appAlert('회원가입', '가입이 완료되었습니다. 로그인 해주세요.', [
       { text: '확인', onPress: () => setShowSignUp(false) },
     ]);
+  };
+
+  // 계정 찾기: 인증코드 전송
+  const onSendFindCode = () => {
+    if (!findPhone) { appAlert('인증', '전화번호를 입력하세요.'); return; }
+    setFindCodeSent(true);
+    appAlert('인증', '인증코드를 전송했습니다. 6자리 코드를 입력하세요.');
+  };
+
+  // 계정 찾기 완료 처리 (모의)
+  const onFindAccountConfirm = () => {
+    if (!findPhone) { appAlert('계정 찾기', '전화번호를 입력하세요.'); return; }
+    if (!findCodeSent) { appAlert('계정 찾기', '휴대폰 인증을 먼저 진행해주세요.'); return; }
+    if (findOtp.length !== 6) { appAlert('계정 찾기', '인증코드를 6자리로 입력해주세요.'); return; }
+    // 모의 이메일 생성 (실제 구현 시 서버 조회)
+    const digits = findPhone.replace(/\D/g, '');
+    const tail = digits.slice(-4).padStart(4, '0');
+    const mockEmail = `user${tail}@example.com`;
+    appAlert('계정 찾기', `가입된 이메일은\n${mockEmail}\n입니다.`);
+  };
+
+  const closeFindAccount = () => {
+    setShowFindAccount(false);
+    setFindCodeSent(false);
+    setFindOtp('');
+    setFindPhone('');
   };
 
   return (
@@ -808,7 +837,7 @@ export default function LoginScreen({ navigation }: Props) {
       </Modal>
 
       {/* ===== 계정 찾기 모달 ===== */}
-      <Modal visible={showFindAccount} animationType="slide" onRequestClose={() => setShowFindAccount(false)}>
+  <Modal visible={showFindAccount} animationType="slide" onRequestClose={closeFindAccount}>
         <SafeAreaView style={{ flex: 1, backgroundColor: BG }}>
           <View
             style={{
@@ -829,7 +858,7 @@ export default function LoginScreen({ navigation }: Props) {
             >
               <Text style={{ fontSize: 18, fontWeight: '900', color: INK }}>계정 찾기</Text>
               <TouchableOpacity
-                onPress={() => setShowFindAccount(false)}
+        onPress={closeFindAccount}
                 style={{
                   paddingHorizontal: 12,
                   paddingVertical: 6,
@@ -851,52 +880,79 @@ export default function LoginScreen({ navigation }: Props) {
           >
             <View style={{ paddingHorizontal: 24, paddingTop: 18 }}>
               <Text style={{ fontSize: 13, color: SUBTLE }}>
-                등록된 전화번호 또는 이메일을 입력하면 계정을 찾아드려요.
+                등록한 휴대폰 번호로 인증하면 이메일을 알려드려요.
               </Text>
 
               <View style={{ marginTop: 16 }}>
                 <Text style={{ fontSize: 12, color: SUBTLE, marginBottom: 8 }}>전화번호</Text>
-                <TextInput
-                  placeholder="010-0000-0000"
-                  placeholderTextColor="#9CA3AF"
-                  keyboardType="phone-pad"
-                  value={findPhone}
-                  onChangeText={(t) => setFindPhone(formatPhone(t))}
-                  style={{
-                    height: 50,
-                    paddingHorizontal: 14,
-                    borderWidth: 1,
-                    borderColor: BORDER,
-                    borderRadius: 14,
-                    backgroundColor: SURFACE,
-                    color: INK,
-                  }}
-                />
+                <View style={{ flexDirection: 'row' }}>
+                  <TextInput
+                    placeholder="010-0000-0000"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="phone-pad"
+                    value={findPhone}
+                    onChangeText={(t) => setFindPhone(formatPhone(t))}
+                    style={{
+                      flex: 1,
+                      height: 50,
+                      paddingHorizontal: 14,
+                      borderWidth: 1,
+                      borderColor: BORDER,
+                      borderRadius: 14,
+                      backgroundColor: SURFACE,
+                      color: INK,
+                      marginRight: 10,
+                    }}
+                  />
+                  <TouchableOpacity
+                    onPress={onSendFindCode}
+                    activeOpacity={0.9}
+                    style={{
+                      height: 50,
+                      paddingHorizontal: 16,
+                      backgroundColor: ACCENT,
+                      borderRadius: 14,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      flexDirection: 'row',
+                      shadowColor: '#000',
+                      shadowOpacity: 0.02,
+                      shadowRadius: 10,
+                      elevation: 0.5,
+                    }}
+                  >
+                    <MaterialIcons name="sms" size={18} color={'#1A1A1A'} />
+                    <Text style={{ color: '#1A1A1A', fontWeight: '900', marginLeft: 6 }}>{findCodeSent ? '재전송' : '인증코드'}</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-
-              <View style={{ marginTop: 12 }}>
-                <Text style={{ fontSize: 12, color: SUBTLE, marginBottom: 8 }}>이메일</Text>
-                <TextInput
-                  placeholder="name@example.com"
-                  placeholderTextColor="#9CA3AF"
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                  value={findEmail}
-                  onChangeText={setFindEmail}
-                  style={{
-                    height: 50,
-                    paddingHorizontal: 14,
-                    borderWidth: 1,
-                    borderColor: BORDER,
-                    borderRadius: 14,
-                    backgroundColor: SURFACE,
-                    color: INK,
-                  }}
-                />
-              </View>
+              {findCodeSent && (
+                <View style={{ marginTop: 12 }}>
+                  <Text style={{ fontSize: 12, color: SUBTLE, marginBottom: 8 }}>인증코드 (6자리)</Text>
+                  <TextInput
+                    placeholder="------"
+                    placeholderTextColor="#9CA3AF"
+                    keyboardType="number-pad"
+                    maxLength={6}
+                    value={findOtp}
+                    onChangeText={setFindOtp}
+                    style={{
+                      height: 50,
+                      paddingHorizontal: 14,
+                      borderWidth: 1,
+                      borderColor: BORDER,
+                      borderRadius: 14,
+                      backgroundColor: SURFACE,
+                      color: INK,
+                      letterSpacing: 4,
+                      textAlign: 'center',
+                    }}
+                  />
+                </View>
+              )}
 
               <TouchableOpacity
-                onPress={() => appAlert('계정 찾기', '입력하신 정보로 계정을 확인하여 안내드릴게요.')}
+                onPress={onFindAccountConfirm}
                 activeOpacity={0.9}
                 style={{
                   height: 52,
@@ -911,7 +967,7 @@ export default function LoginScreen({ navigation }: Props) {
                   elevation: 0.5,
                 }}
               >
-                <Text style={{ fontSize: 16, fontWeight: '900', color: '#1A1A1A' }}>확인</Text>
+                <Text style={{ fontSize: 16, fontWeight: '900', color: '#1A1A1A' }}>계정 찾기</Text>
               </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>
