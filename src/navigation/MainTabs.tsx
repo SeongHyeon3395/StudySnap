@@ -21,7 +21,17 @@ import {
   NativeSyntheticEvent,
   Easing,
   BackHandler,
+  Alert,
+  DeviceEventEmitter,
 } from 'react-native';
+// Push notification (optional). Dynamic load to avoid crash if package not installed.
+let PushNotification: any = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  PushNotification = require('react-native-push-notification');
+} catch (e) {
+  // package not installed yet
+}
 
 const Tab = createBottomTabNavigator();
 const HomeStackNav = createNativeStackNavigator();
@@ -46,7 +56,7 @@ const SHADOW = {
   elevation: 0.5,
 } as const;
 
-function TopBar({ title, onBack }: { title: string; onBack?: () => void }) {
+function TopBar({ title, onBack, right }: { title: string; onBack?: () => void; right?: React.ReactNode }) {
   return (
     <View style={{ backgroundColor: BG, borderBottomColor: BORDER, borderBottomWidth: 1 }}>
       <View style={{ paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0, backgroundColor: BG }}>
@@ -57,6 +67,11 @@ function TopBar({ title, onBack }: { title: string; onBack?: () => void }) {
             </TouchableOpacity>
           )}
           <Text style={{ fontSize: 19, fontWeight: '900', color: INK, letterSpacing: 0.3, textAlign:'center' }}>{title}</Text>
+          {right && (
+            <View style={{ position:'absolute', right:6, top:6 }}>
+              {right}
+            </View>
+          )}
         </View>
       </View>
     </View>
@@ -64,6 +79,14 @@ function TopBar({ title, onBack }: { title: string; onBack?: () => void }) {
 }
 
 function HomeScreen({ navigation }: any) {
+  const homeScrollRef = React.useRef<ScrollView|null>(null);
+  // 홈 탭 눌렀을 때 항상 최상단 스크롤
+  React.useEffect(()=>{
+    const sub = DeviceEventEmitter.addListener('homeTabPress', ()=>{
+      homeScrollRef.current?.scrollTo({ y:0, animated:true });
+    });
+    return () => sub.remove();
+  },[]);
   // In-app toast message
   const toastOpacity = React.useRef(new Animated.Value(0)).current;
   const [toast, setToast] = React.useState('');
@@ -127,7 +150,14 @@ function HomeScreen({ navigation }: any) {
         </View>
       </View>
 
-  <ScrollView style={{ flex:1 }} contentContainerStyle={{ paddingTop:6, paddingBottom:140 }} showsVerticalScrollIndicator={false}>
+  <ScrollView
+        ref={homeScrollRef}
+        style={{ flex:1 }}
+        contentContainerStyle={{ paddingTop:6, paddingBottom:32 }}
+        showsVerticalScrollIndicator={false}
+        bounces={false}
+        overScrollMode="never"
+      >
         <AdCarousel />
 
         {/* Goals Card (shows first 3) */}
@@ -162,7 +192,7 @@ function HomeScreen({ navigation }: any) {
         </View>
 
         {/* Tiles 2x2 (간격 축소 & 목표 카드 폭(90%) 정렬) */}
-        <View style={{ flexDirection:'row', flexWrap:'wrap', justifyContent:'space-between', width:'90%', alignSelf:'center', marginTop:4 }}>
+  <View style={{ flexDirection:'row', flexWrap:'wrap', justifyContent:'space-between', width:'90%', alignSelf:'center', marginTop:4, paddingBottom:4 }}>
           {tiles.map(t => (
             <TouchableOpacity key={t.key} activeOpacity={0.9} onPress={() => onPressCard(t.type)} style={{ width:'48%', marginBottom:14 }}>
               <View style={{ backgroundColor: SURFACE, borderWidth:1, borderColor:BORDER, borderRadius:20, padding:13, minHeight:165, justifyContent:'flex-start', alignItems:'center', ...SHADOW }}>
@@ -301,34 +331,356 @@ function AdCarousel() {
   );
 }
 
+type LibraryItem = { id:string; name:string; type:'pdf'; pages:number; sizeKB:number; created:string; path:string };
 function LibraryScreen() {
+  const initial: LibraryItem[] = [
+    { id:'lib-sample-1', name:'샘플요약.pdf', type:'pdf', pages:1, sizeKB:3, created:'2025-09-03 11:00', path:'assets/sample.pdf' }
+  ];
+  const [items, setItems] = React.useState<LibraryItem[]>(initial);
+
+  const onPressItem = (item:LibraryItem) => {
+    Alert.alert(
+      '파일 정보',
+      `${item.name}\n${item.pages}페이지 · ${item.sizeKB}KB`,
+      [
+        {
+          text:'삭제',
+          style:'destructive',
+          onPress:()=> setItems(prev=> prev.filter(it=>it.id!==item.id))
+        },
+        {
+          text:'다운로드',
+          onPress:()=> {
+            // TODO: 실제 파일 저장 (예: react-native-fs) 연동
+            Alert.alert('다운로드', '샘플 (구현 예정)');
+          }
+        },
+        { text:'닫기', style:'cancel' }
+      ],
+      { cancelable:true }
+    );
+  };
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: BG }}>
       <StatusBar barStyle="dark-content" backgroundColor={BG} />
       <TopBar title="자료함" />
-      <View style={{ flex: 1, backgroundColor: BG, alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-        <MaterialIcons name="folder-open" size={40} color={ACCENT} />
-        <Text style={{ marginTop: 12, fontSize: 16, fontWeight: '900', color: INK }}>자료가 비어있어요</Text>
-        <Text style={{ marginTop: 6, fontSize: 13, color: SUBTLE, textAlign: 'center' }}>
-          홈에서 촬영하거나 노트를 만들면 여기에 모여요.
-        </Text>
-      </View>
+      <ScrollView style={{ flex:1 }} contentContainerStyle={{ padding:18, paddingBottom:140 }} showsVerticalScrollIndicator={false}>
+        {items.length === 0 && (
+          <View style={{ alignItems:'center', marginTop:40 }}>
+            <MaterialIcons name="folder-open" size={40} color={ACCENT} />
+            <Text style={{ marginTop:12, fontSize:16, fontWeight:'900', color:INK }}>파일이 없습니다</Text>
+            <Text style={{ marginTop:6, fontSize:12, color:SUBTLE }}>스냅/문서 저장 시 여기에 표시됩니다</Text>
+          </View>
+        )}
+        {items.map(item => (
+          <TouchableOpacity key={item.id} activeOpacity={0.85} onPress={()=>onPressItem(item)} style={{ backgroundColor:SURFACE, borderWidth:1, borderColor:BORDER, borderRadius:18, padding:16, marginBottom:14, ...SHADOW }}>
+            <View style={{ flexDirection:'row', alignItems:'center' }}>
+              <View style={{ width:46, height:46, borderRadius:12, backgroundColor:ACCENT_SOFT, alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:BORDER, marginRight:14 }}>
+                <MaterialIcons name="picture-as-pdf" size={24} color={ACCENT} />
+              </View>
+              <View style={{ flex:1 }}>
+                <Text style={{ fontSize:14.5, fontWeight:'900', color:INK }} numberOfLines={1}>{item.name}</Text>
+                <Text style={{ fontSize:11, color:SUBTLE, marginTop:4 }}>{item.pages}페이지 · {item.sizeKB}KB</Text>
+              </View>
+            </View>
+            <View style={{ flexDirection:'row', marginTop:12 }}>
+              <View style={{ flexDirection:'row', alignItems:'center', marginRight:14 }}>
+                <MaterialIcons name="event" size={14} color={SUBTLE} />
+                <Text style={{ marginLeft:4, fontSize:10, color:SUBTLE }}>{item.created}</Text>
+              </View>
+              <View style={{ flexDirection:'row', alignItems:'center' }}>
+                <MaterialIcons name="storage" size={14} color={SUBTLE} />
+                <Text style={{ marginLeft:4, fontSize:10, color:SUBTLE }}>{item.path}</Text>
+              </View>
+            </View>
+          </TouchableOpacity>
+        ))}
+        <Text style={{ fontSize:11, color:SUBTLE, textAlign:'center', marginTop:30 }}>임시 예시 · 실제 저장/다운로드 로직 예정</Text>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
+type Schedule = { id:string; title:string; desc:string; date:string; favorite?:boolean; alarmTime?:string|null };
 function PlanScreen() {
+  const [items, setItems] = React.useState<Schedule[]>([]);
+  const [modalVisible, setModalVisible] = React.useState(false);
+  const [title, setTitle] = React.useState('');
+  const [desc, setDesc] = React.useState('');
+  // 캘린더 상태
+  const today = new Date();
+  const [calYear, setCalYear] = React.useState(today.getFullYear());
+  const [calMonth, setCalMonth] = React.useState(today.getMonth()); // 0-based
+  const [selectedDay, setSelectedDay] = React.useState<number>(today.getDate());
+  // 상세 모달 & 알람
+  const [detail, setDetail] = React.useState<Schedule|null>(null);
+  const [pickHour, setPickHour] = React.useState<number>(8);
+  const [pickMinute, setPickMinute] = React.useState<number>(0);
+  // 간단 토스트
+  const toastOpacity = React.useRef(new Animated.Value(0)).current;
+  const [toast, setToast] = React.useState('');
+  const showToast = (msg:string) => {
+    setToast(msg);
+    Animated.timing(toastOpacity,{ toValue:1,duration:160,useNativeDriver:true }).start(()=>{
+      setTimeout(()=>{
+        Animated.timing(toastOpacity,{ toValue:0,duration:180,useNativeDriver:true }).start();
+      },1700);
+    });
+  };
+
+  // 채널 생성 (1회)
+  React.useEffect(()=>{
+    if (!PushNotification) return; // 패키지 미설치 시 스킵
+    try {
+      PushNotification.createChannel({
+        channelId:'study-plan',
+        channelName:'Study Plan',
+        importance:4,
+      }, ()=>{});
+      PushNotification.requestPermissions?.();
+    } catch {}
+  },[]);
+
+  const sortItems = (arr:Schedule[]) => {
+    return [...arr].sort((a,b)=>{
+      const favA = a.favorite?1:0; const favB = b.favorite?1:0;
+      if (favA !== favB) return favB - favA; // 즐겨찾기 우선
+      return a.date.localeCompare(b.date);
+    });
+  };
+
+  const open = () => setModalVisible(true);
+  const close = () => setModalVisible(false);
+
+  const addSchedule = () => {
+    if (!title.trim() || !selectedDay) return;
+    const dateObj = new Date(calYear, calMonth, selectedDay);
+    const dateStr = `${dateObj.getFullYear()}-${('0'+(dateObj.getMonth()+1)).slice(-2)}-${('0'+dateObj.getDate()).slice(-2)}`;
+    setItems(prev => sortItems([...prev, { id: 'sc-'+Date.now(), title: title.trim(), desc: desc.trim(), date: dateStr, favorite:false, alarmTime:null }]));
+    setTitle(''); setDesc('');
+    setCalYear(today.getFullYear()); setCalMonth(today.getMonth()); setSelectedDay(today.getDate());
+    close();
+  };
+
+  const rightBtn = (
+    <TouchableOpacity onPress={open} style={{ paddingVertical:6, paddingHorizontal:10, flexDirection:'row', alignItems:'center' }} hitSlop={{ top:8,bottom:8,left:8,right:8 }}>
+      <MaterialIcons name="add" size={24} color={ACCENT} />
+      <Text style={{ marginLeft:4, fontSize:12, fontWeight:'800', color:ACCENT }}>플랜 추가</Text>
+    </TouchableOpacity>
+  );
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: BG }}>
       <StatusBar barStyle="dark-content" backgroundColor={BG} />
-      <TopBar title="플랜" />
-      <View style={{ flex: 1, backgroundColor: BG, alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-        <MaterialIcons name="event-note" size={40} color={ACCENT} />
-        <Text style={{ marginTop: 12, fontSize: 16, fontWeight: '900', color: INK }}>시험 일정을 등록해보세요</Text>
-        <Text style={{ marginTop: 6, fontSize: 13, color: SUBTLE, textAlign: 'center' }}>
-          일정에 맞춰 하루 학습량을 자동 배분해 드릴게요.
-        </Text>
-      </View>
+      <TopBar title="플랜" right={rightBtn} />
+      <ScrollView style={{ flex:1 }} contentContainerStyle={{ padding:18, paddingBottom:140 }} showsVerticalScrollIndicator={false}>
+        {items.length === 0 && (
+          <View style={{ alignItems:'center', marginTop:40 }}>
+            <MaterialIcons name="event-note" size={40} color={ACCENT} />
+            <Text style={{ marginTop: 12, fontSize: 16, fontWeight: '900', color: INK }}>등록된 일정이 없어요</Text>
+            <Text style={{ marginTop: 6, fontSize: 13, color: SUBTLE, textAlign: 'center' }}>우측 상단 + 버튼으로 시험 / 학습 일정을 추가해요.</Text>
+          </View>
+        )}
+        {items.map(it => (
+          <TouchableOpacity key={it.id} onPress={()=>setDetail(it)} activeOpacity={0.85} style={{ backgroundColor:SURFACE, borderWidth:1, borderColor:BORDER, borderRadius:18, padding:16, marginBottom:14, ...SHADOW }}>
+            <View style={{ flexDirection:'row', alignItems:'center', marginBottom:8 }}>
+              <MaterialIcons name={it.favorite? 'star' : 'event'} size={22} color={it.favorite? ACCENT : ACCENT} />
+              <Text style={{ marginLeft:8, fontSize:15, fontWeight:'800', color:INK }}>{it.title}</Text>
+              <View style={{ marginLeft:'auto' }}>
+                <Text style={{ fontSize:11, fontWeight:'700', color:SUBTLE }}>{it.date}</Text>
+                {it.alarmTime && (
+                  <View style={{ flexDirection:'row', alignItems:'center', marginTop:4 }}>
+                    <MaterialIcons name="alarm" size={14} color={ACCENT} />
+                    <Text style={{ marginLeft:4, fontSize:10, fontWeight:'700', color:ACCENT }}>{it.alarmTime}</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+            {!!it.desc && <Text style={{ fontSize:12.5, lineHeight:18, color:SUBTLE }}>{it.desc}</Text>}
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={close}>
+        <View style={{ flex:1, backgroundColor:'rgba(0,0,0,0.28)', justifyContent:'center', padding:24 }}>
+          <View style={{ backgroundColor:SURFACE, borderRadius:20, borderWidth:1, borderColor:BORDER, padding:20 }}>
+            <Text style={{ fontSize:16, fontWeight:'900', color:INK }}>일정 추가</Text>
+            <TextInput value={title} onChangeText={setTitle} placeholder="일정 이름" placeholderTextColor="#9AA2AF" style={{ marginTop:14, borderWidth:1, borderColor:BORDER, borderRadius:12, paddingHorizontal:14, paddingVertical:10, backgroundColor:'#FFF', fontSize:14 }} />
+            <TextInput value={desc} onChangeText={setDesc} placeholder="일정 내용 (선택)" placeholderTextColor="#9AA2AF" multiline style={{ marginTop:10, borderWidth:1, borderColor:BORDER, borderRadius:12, paddingHorizontal:14, paddingVertical:10, backgroundColor:'#FFF', fontSize:13, minHeight:80, textAlignVertical:'top' }} />
+            {/* 캘린더 */}
+            <View style={{ marginTop:16 }}>
+              <View style={{ flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
+                <TouchableOpacity onPress={()=>{ const d=new Date(calYear, calMonth-1, 1); setCalYear(d.getFullYear()); setCalMonth(d.getMonth()); }} style={{ padding:6 }}>
+                  <MaterialIcons name="chevron-left" size={28} color={INK} />
+                </TouchableOpacity>
+                <Text style={{ fontSize:15, fontWeight:'800', color:INK }}>{calYear}년 {calMonth+1}월</Text>
+                <TouchableOpacity onPress={()=>{ const d=new Date(calYear, calMonth+1, 1); setCalYear(d.getFullYear()); setCalMonth(d.getMonth()); }} style={{ padding:6 }}>
+                  <MaterialIcons name="chevron-right" size={28} color={INK} />
+                </TouchableOpacity>
+              </View>
+              <View style={{ flexDirection:'row', justifyContent:'space-between', paddingHorizontal:4, marginBottom:4 }}>
+                {['일','월','화','수','목','금','토'].map(w=> <Text key={w} style={{ width:32, textAlign:'center', fontSize:11, fontWeight:'700', color:SUBTLE }}>{w}</Text> )}
+              </View>
+              {(() => {
+                const first = new Date(calYear, calMonth, 1).getDay();
+                const lastDate = new Date(calYear, calMonth+1, 0).getDate();
+                const cells: (number|null)[] = [...Array(first).fill(null), ...Array(lastDate).fill(0).map((_,i)=>i+1)];
+                while(cells.length % 7 !==0) cells.push(null);
+                const rows=[]; for(let i=0;i<cells.length;i+=7){ rows.push(cells.slice(i,i+7)); }
+                return (
+                  <View>
+                    {rows.map((r,ri)=>(
+                      <View key={ri} style={{ flexDirection:'row', justifyContent:'space-between', paddingHorizontal:4, marginBottom:4 }}>
+                        {r.map((d,di)=>{
+                          const isSel = d === selectedDay;
+                          return (
+                            <TouchableOpacity
+                              key={di}
+                              onPress={()=> d && setSelectedDay(d)}
+                              disabled={!d}
+                              style={{ width:32, height:32, borderRadius:10, alignItems:'center', justifyContent:'center', backgroundColor:isSel?ACCENT:(d? '#FFF':'transparent'), borderWidth:1, borderColor: isSel?ACCENT: (d?BORDER:'transparent') }}>
+                              <Text style={{ fontSize:12, fontWeight:'700', color:isSel?'#FFF':INK }}>{d?d:''}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    ))}
+                  </View>
+                );
+              })()}
+              <View style={{ flexDirection:'row', marginTop:10 }}>
+                <TouchableOpacity onPress={()=>{ const t=new Date(); setCalYear(t.getFullYear()); setCalMonth(t.getMonth()); setSelectedDay(t.getDate()); }} style={{ paddingHorizontal:12, paddingVertical:8, borderRadius:10, backgroundColor:ACCENT_SOFT, borderWidth:1, borderColor:BORDER }}>
+                  <Text style={{ fontSize:12, fontWeight:'700', color:ACCENT }}>오늘</Text>
+                </TouchableOpacity>
+                <View style={{ marginLeft:10, justifyContent:'center' }}>
+                  <Text style={{ fontSize:11, color:SUBTLE }}>선택: {calYear}-{('0'+(calMonth+1)).slice(-2)}-{('0'+selectedDay).slice(-2)}</Text>
+                </View>
+              </View>
+            </View>
+            <View style={{ flexDirection:'row', marginTop:18 }}>
+              <TouchableOpacity onPress={close} style={{ flex:1, paddingVertical:12, borderRadius:12, backgroundColor:ACCENT_SOFT, borderWidth:1, borderColor:BORDER, alignItems:'center', marginRight:8 }}>
+                <Text style={{ color:ACCENT, fontWeight:'800' }}>취소</Text>
+              </TouchableOpacity>
+              <TouchableOpacity disabled={!title.trim() || !selectedDay} onPress={addSchedule} style={{ flex:1, paddingVertical:12, borderRadius:12, backgroundColor: (title.trim()&&selectedDay)?ACCENT:'#E2E4E8', alignItems:'center' }}>
+                <Text style={{ color: (title.trim()&&selectedDay)?'#FFF':SUBTLE, fontWeight:'800' }}>추가</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+      {/* 상세 모달 */}
+      <Modal visible={!!detail} transparent animationType="fade" onRequestClose={()=>setDetail(null)}>
+        <View style={{ flex:1, backgroundColor:'rgba(0,0,0,0.28)', justifyContent:'center', padding:24 }}>
+          {detail && (
+            <View style={{ backgroundColor:SURFACE, borderRadius:20, borderWidth:1, borderColor:BORDER, padding:20, maxHeight:'85%' }}>
+              <View style={{ flexDirection:'row', alignItems:'center' }}>
+                <Text style={{ fontSize:16, fontWeight:'900', color:INK }}>{detail.title}</Text>
+                <TouchableOpacity onPress={()=>{
+                  setItems(prev => {
+                    const upd = prev.map(it => it.id===detail.id? { ...it, favorite: !it.favorite }:it);
+                    const newDetail = upd.find(i=>i.id===detail.id)!;
+                    setDetail(newDetail);
+                    return sortItems(upd);
+                  });
+                }} style={{ marginLeft:'auto', padding:6 }}>
+                  <MaterialIcons name={detail.favorite? 'star' : 'star-border'} size={24} color={ACCENT} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={()=>setDetail(null)} style={{ padding:6 }}>
+                  <MaterialIcons name="close" size={22} color={SUBTLE} />
+                </TouchableOpacity>
+              </View>
+              <Text style={{ marginTop:4, fontSize:12, fontWeight:'600', color:SUBTLE }}>{detail.date}</Text>
+              {!!detail.desc && <Text style={{ marginTop:12, fontSize:13, lineHeight:20, color:INK }}>{detail.desc}</Text>}
+              {/* 알람 설정 */}
+              <View style={{ marginTop:20 }}>
+                <Text style={{ fontSize:14, fontWeight:'800', color:INK }}>알람</Text>
+                {detail.alarmTime ? (
+                  <View style={{ marginTop:10 }}>
+                    <View style={{ flexDirection:'row', alignItems:'center' }}>
+                      <MaterialIcons name="alarm" size={18} color={ACCENT} />
+                      <Text style={{ marginLeft:6, fontSize:13, fontWeight:'700', color:ACCENT }}>{detail.alarmTime}</Text>
+                      <TouchableOpacity onPress={()=>{
+                        PushNotification?.cancelLocalNotifications?.({ id: detail.id });
+                        setItems(prev=>prev.map(it=>it.id===detail.id?{...it, alarmTime:null}:it));
+                        setDetail(d=> d? {...d, alarmTime:null }:d);
+                        showToast('알람 해제');
+                      }} style={{ marginLeft:'auto', paddingHorizontal:12, paddingVertical:8, borderRadius:10, backgroundColor:ACCENT_SOFT, borderWidth:1, borderColor:BORDER }}>
+                        <Text style={{ fontSize:11, fontWeight:'700', color:ACCENT }}>해제</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={{ marginTop:10 }}>
+                    <View style={{ flexDirection:'row', alignItems:'center' }}>
+                      <Text style={{ fontSize:12, fontWeight:'700', color:SUBTLE }}>시간 선택</Text>
+                    </View>
+                    <View style={{ flexDirection:'row', marginTop:10 }}>
+                      <ScrollView style={{ maxHeight:140 }}>
+                        {Array.from({length:24},(_,h)=>h).map(h=> (
+                          <TouchableOpacity key={h} onPress={()=>setPickHour(h)} style={{ paddingVertical:6, paddingHorizontal:12, borderRadius:8, backgroundColor: h===pickHour?ACCENT_SOFT:'#FFF', marginBottom:4, borderWidth:1, borderColor:h===pickHour?ACCENT:BORDER }}>
+                            <Text style={{ fontSize:12, fontWeight:'700', color: h===pickHour?ACCENT:INK }}>{('0'+h).slice(-2)}시</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                      <ScrollView style={{ maxHeight:140, marginLeft:12 }}>
+                        {Array.from({length:12},(_,i)=>i*5).map(m=> (
+                          <TouchableOpacity key={m} onPress={()=>setPickMinute(m)} style={{ paddingVertical:6, paddingHorizontal:12, borderRadius:8, backgroundColor: m===pickMinute?ACCENT_SOFT:'#FFF', marginBottom:4, borderWidth:1, borderColor:m===pickMinute?ACCENT:BORDER }}>
+                            <Text style={{ fontSize:12, fontWeight:'700', color: m===pickMinute?ACCENT:INK }}>{('0'+m).slice(-2)}분</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                      <View style={{ marginLeft:14, justifyContent:'center' }}>
+                        <Text style={{ fontSize:12, fontWeight:'700', color:INK }}>{('0'+pickHour).slice(-2)}:{('0'+pickMinute).slice(-2)}</Text>
+                        <TouchableOpacity onPress={()=>{
+                          // 스케줄 날짜 + 선택시간
+                          const [y,m,d] = detail.date.split('-').map(Number);
+                          const fire = new Date(y!, (m!-1), d!, pickHour, pickMinute, 0);
+                          if (fire.getTime() <= Date.now()) { showToast('미래 시간을 선택'); return; }
+                          if (PushNotification?.localNotificationSchedule) {
+                            PushNotification.localNotificationSchedule({
+                              channelId:'study-plan',
+                              message: `${detail.title} 일정 알림`,
+                              date: fire,
+                              allowWhileIdle:true,
+                              id: detail.id,
+                            });
+                          } else {
+                            showToast('알림 패키지 없음');
+                          }
+                          setItems(prev=>prev.map(it=>it.id===detail.id?{...it, alarmTime: ('0'+pickHour).slice(-2)+':'+('0'+pickMinute).slice(-2)}:it));
+                          setDetail(d=> d? {...d, alarmTime: ('0'+pickHour).slice(-2)+':'+('0'+pickMinute).slice(-2)}:d);
+                          showToast('알람 설정');
+                        }} style={{ marginTop:10, paddingHorizontal:14, paddingVertical:10, borderRadius:12, backgroundColor:ACCENT, alignItems:'center' }}>
+                          <Text style={{ fontSize:12, fontWeight:'800', color:'#FFF' }}>설정</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                )}
+              </View>
+              <View style={{ flexDirection:'row', marginTop:24 }}>
+                <TouchableOpacity onPress={()=>{
+                  setItems(prev=> prev.filter(it=>it.id!==detail.id));
+                  showToast('삭제됨');
+                  setDetail(null);
+                }} style={{ flex:1, paddingVertical:12, borderRadius:12, backgroundColor:'#FDECEC', borderWidth:1, borderColor:'#F7C6C6', alignItems:'center', marginRight:8 }}>
+                  <Text style={{ color:DANGER, fontWeight:'800', fontSize:12 }}>삭제</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={()=>setDetail(null)} style={{ flex:1, paddingVertical:12, borderRadius:12, backgroundColor:ACCENT, alignItems:'center' }}>
+                  <Text style={{ color:'#FFF', fontWeight:'800', fontSize:12 }}>닫기</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+      </Modal>
+      {/* Toast */}
+      <Animated.View pointerEvents={toast? 'auto':'none'} style={{ position:'absolute', bottom:90, left:0, right:0, alignItems:'center', opacity:toastOpacity }}>
+        <View style={{ backgroundColor: SURFACE, borderRadius:14, borderWidth:1, borderColor:BORDER, paddingHorizontal:16, paddingVertical:12, ...SHADOW, maxWidth:'80%' }}>
+          <Text style={{ color: INK, fontSize:13, fontWeight:'600' }}>{toast}</Text>
+        </View>
+      </Animated.View>
     </SafeAreaView>
   );
 }
@@ -656,7 +1008,12 @@ export default function MainTabs() {
     >
       <Tab.Screen
         name="Home"
-  component={HomeStackScreen}
+        component={HomeStackScreen}
+        listeners={{
+          tabPress: () => {
+            DeviceEventEmitter.emit('homeTabPress');
+          }
+        }}
         options={{
           tabBarLabel: '홈',
           tabBarIcon: ({ color, size }) => <MaterialIcons name="home-filled" color={color} size={size} />,

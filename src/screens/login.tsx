@@ -11,8 +11,8 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   Modal,
-  Alert,
 } from 'react-native';
+import { useAppAlert } from '../components/AppAlertProvider';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Animated, Easing, Dimensions } from 'react-native';
@@ -20,6 +20,7 @@ import { Animated, Easing, Dimensions } from 'react-native';
 type Props = { navigation?: any };
 
 export default function LoginScreen({ navigation }: Props) {
+  const appAlert = useAppAlert();
   const [phase, setPhase] = useState<'intro' | 'login'>('intro');
   const screenWidth = Dimensions.get('window').width;
   const translateX = useRef(new Animated.Value(0)).current;
@@ -92,23 +93,19 @@ export default function LoginScreen({ navigation }: Props) {
 
   const onLoginPress = () => {
     if (!email || !password) {
-      Alert.alert('로그인', '이메일과 비밀번호를 입력해주세요.');
+      appAlert('로그인', '이메일과 비밀번호를 입력해주세요.');
       return;
     }
-    // TODO: 서버 로그인 연동
-    Alert.alert('로그인', '로그인 성공(예시). 메인 화면으로 이동합니다.', [
+    appAlert('로그인', '로그인 성공(예시). 메인 화면으로 이동합니다.', [
       { text: '확인', onPress: () => navigation?.replace?.('Main') ?? null },
     ]);
   };
 
   const onSendCode = () => {
-    if (!suPhone) {
-      Alert.alert('인증', '휴대폰 번호를 입력하세요.');
-      return;
-    }
+  if (!suPhone) { appAlert('인증', '휴대폰 번호를 입력하세요.'); return; }
     // TODO: 인증코드 발송 API 연동
     setCodeSent(true);
-    Alert.alert('인증', '인증코드를 전송했습니다. 6자리 코드를 입력하세요.');
+  appAlert('인증', '인증코드를 전송했습니다. 6자리 코드를 입력하세요.');
   };
 
   const formatPhone = (raw: string) => {
@@ -134,36 +131,18 @@ export default function LoginScreen({ navigation }: Props) {
   };
 
   const onSignUp = () => {
-    if (!suName || !suEmail || !suBirth || !suPhone) {
-      Alert.alert('회원가입', '모든 필드를 입력해주세요.');
-      return;
-    }
-    if (suBirth.length !== 10) { // YYYY.MM.DD
-      Alert.alert('회원가입', '생년월일을 YYYY.MM.DD 형식으로 입력해주세요.');
-      return;
-    }
+    if (!suName || !suEmail || !suBirth || !suPhone) { appAlert('회원가입', '모든 필드를 입력해주세요.'); return; }
+    if (suBirth.length !== 10) { appAlert('회원가입', '생년월일을 YYYY.MM.DD 형식으로 입력해주세요.'); return; }
     const birthDigits = suBirth.replace(/\D/g, '');
     const by = parseInt(birthDigits.slice(0,4),10);
     const bm = parseInt(birthDigits.slice(4,6),10);
     const bd = parseInt(birthDigits.slice(6,8),10);
-    if (by < 1900 || by > 2100 || bm < 1 || bm > 12 || bd < 1 || bd > 31) {
-      Alert.alert('회원가입', '생년월일 값이 올바르지 않습니다.');
-      return;
-    }
-    if (!suPassword || suPassword.length < 6) {
-      Alert.alert('회원가입', '비밀번호는 6자 이상으로 설정해주세요.');
-      return;
-    }
-    if (suPassword !== suPassword2) {
-      Alert.alert('회원가입', '비밀번호가 서로 일치하지 않습니다.');
-      return;
-    }
-    if (!codeSent || otp.length !== 6) {
-      Alert.alert('회원가입', '휴대폰 인증을 완료해주세요. (6자리 코드)');
-      return;
-    }
+    if (by < 1900 || by > 2100 || bm < 1 || bm > 12 || bd < 1 || bd > 31) { appAlert('회원가입', '생년월일 값이 올바르지 않습니다.'); return; }
+    if (!suPassword || suPassword.length < 6) { appAlert('회원가입', '비밀번호는 6자 이상으로 설정해주세요.'); return; }
+    if (suPassword !== suPassword2) { appAlert('회원가입', '비밀번호가 서로 일치하지 않습니다.'); return; }
+    if (!codeSent || otp.length !== 6) { appAlert('회원가입', '휴대폰 인증을 완료해주세요. (6자리 코드)'); return; }
     // TODO: 회원가입 API 연동
-    Alert.alert('회원가입', '가입이 완료되었습니다. 로그인 해주세요.', [
+    appAlert('회원가입', '가입이 완료되었습니다. 로그인 해주세요.', [
       { text: '확인', onPress: () => setShowSignUp(false) },
     ]);
   };
@@ -917,7 +896,7 @@ export default function LoginScreen({ navigation }: Props) {
               </View>
 
               <TouchableOpacity
-                onPress={() => Alert.alert('계정 찾기', '입력하신 정보로 계정을 확인하여 안내드릴게요.')}
+                onPress={() => appAlert('계정 찾기', '입력하신 정보로 계정을 확인하여 안내드릴게요.')}
                 activeOpacity={0.9}
                 style={{
                   height: 52,
@@ -1010,10 +989,10 @@ export default function LoginScreen({ navigation }: Props) {
               <TouchableOpacity
                 onPress={() => {
                   if (!findEmail) {
-                    Alert.alert('비밀번호 찾기', '이메일을 입력해주세요.');
+                    appAlert('비밀번호 찾기', '이메일을 입력해주세요.');
                     return;
                   }
-                  Alert.alert('비밀번호 찾기', '입력하신 이메일로 안내를 보냈습니다.');
+                  appAlert('비밀번호 찾기', '입력하신 이메일로 안내를 보냈습니다.');
                 }}
                 activeOpacity={0.9}
                 style={{

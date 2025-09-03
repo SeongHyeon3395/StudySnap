@@ -2,8 +2,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   SafeAreaView, View, Text, StatusBar, Platform, TouchableOpacity, TextInput,
-  ScrollView, Image, Alert, Animated, Easing
+  ScrollView, Image, Animated, Easing
 } from 'react-native';
+import { useAppAlert } from '../components/AppAlertProvider';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { launchCamera, launchImageLibrary, Asset, type ImageLibraryOptions, type CameraOptions } from 'react-native-image-picker';
 import AsyncStorage from '../utils/safeAsyncStorage';
@@ -52,6 +53,7 @@ type Msg = { id: string; role: 'user' | 'assistant'; text: string; imageUri?: st
 type Props = { navigation: any };
 
 export default function AskScreen({ navigation }: Props) {
+  const appAlert = useAppAlert();
   // 메시지
   const [messages, setMessages] = useState<Msg[]>([
     {
@@ -135,7 +137,7 @@ export default function AskScreen({ navigation }: Props) {
 
   const pickFromLibrary = async () => {
     if (!canUseImageToday() && !attachedUri) {
-      Alert.alert('제한', '이미지 질문은 오늘 3회까지 가능합니다.');
+  appAlert('제한', '이미지 질문은 오늘 3회까지 가능합니다.');
       return;
     }
     const res = await launchImageLibrary(LIB_OPTS);
@@ -145,7 +147,7 @@ export default function AskScreen({ navigation }: Props) {
 
   const takePhoto = async () => {
     if (!canUseImageToday() && !attachedUri) {
-      Alert.alert('제한', '이미지 질문은 오늘 3회까지 가능합니다.');
+  appAlert('제한', '이미지 질문은 오늘 3회까지 가능합니다.');
       return;
     }
     try {
@@ -154,7 +156,7 @@ export default function AskScreen({ navigation }: Props) {
       console.log('[AskScreen] launchCamera result', res);
       if (res.didCancel) return;
       if (res.errorCode) {
-        Alert.alert('카메라 오류', res.errorMessage || res.errorCode);
+  appAlert('카메라 오류', res.errorMessage || res.errorCode);
         return;
       }
       const asset = res.assets?.[0];
@@ -162,7 +164,7 @@ export default function AskScreen({ navigation }: Props) {
       else console.warn('[AskScreen] No asset uri returned');
     } catch (e:any) {
       console.warn('[AskScreen] Camera exception', e);
-      Alert.alert('카메라 실행 실패', '카메라를 열 수 없습니다. 권한 또는 기기 상태를 확인해주세요.');
+  appAlert('카메라 실행 실패', '카메라를 열 수 없습니다. 권한 또는 기기 상태를 확인해주세요.');
     }
   };
 
@@ -170,15 +172,15 @@ export default function AskScreen({ navigation }: Props) {
   const handleSend = async () => {
     const text = input.trim();
     if (!text && !attachedUri) {
-      Alert.alert('안내', '질문을 입력하거나 이미지를 첨부해 주세요.');
+  appAlert('안내', '질문을 입력하거나 이미지를 첨부해 주세요.');
       return;
     }
     if (text.length > MAX_QUESTION_LEN) {
-      Alert.alert('제한', `질문은 ${MAX_QUESTION_LEN}자까지 가능합니다.`);
+  appAlert('제한', `질문은 ${MAX_QUESTION_LEN}자까지 가능합니다.`);
       return;
     }
     if (attachedUri && !canUseImageToday()) {
-      Alert.alert('제한', '이미지 질문은 오늘 3회까지입니다.');
+  appAlert('제한', '이미지 질문은 오늘 3회까지입니다.');
       return;
     }
 
