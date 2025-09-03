@@ -1,5 +1,6 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
@@ -22,6 +23,7 @@ import {
 } from 'react-native';
 
 const Tab = createBottomTabNavigator();
+const HomeStackNav = createNativeStackNavigator();
 
 // THEME — Neutral + Orange Accent + Deep Navy (로그인 화면과 동일 팔레트)
 const BG = '#F6F7FB';          // 전체 배경
@@ -60,7 +62,7 @@ function TopBar({ title, onBack }: { title: string; onBack?: () => void }) {
   );
 }
 
-function HomeScreen() {
+function HomeScreen({ navigation }: any) {
   // In-app toast message
   const toastOpacity = React.useRef(new Animated.Value(0)).current;
   const [toast, setToast] = React.useState('');
@@ -90,8 +92,8 @@ function HomeScreen() {
   const deleteGoal = (id: string) => setGoals(g => g.filter(it => it.id !== id));
 
   const onPressCard = (type: 'snap' | 'ask' | 'quiz' | 'ai') => {
-    if (type === 'snap') showToast('스냅 정리 준비중');
-    if (type === 'ask') showToast('즉시 질문 준비중');
+    if (type === 'snap') { navigation.navigate('Snap'); return; }
+    if (type === 'ask') { navigation.navigate('Ask'); return; }
     if (type === 'quiz') showToast('스피드 퀴즈 준비중');
     if (type === 'ai') showToast('AI 문제 준비중');
   };
@@ -100,7 +102,7 @@ function HomeScreen() {
     { key:'snap', label:'스냅 정리', desc:'찍고 정리', long:'사진을 찍고 PDF 변환 · 텍스트 추출 등을 할 수 있어요.', icon:<MaterialIcons name="photo-camera" size={24} color={ACCENT} />, type:'snap' },
     { key:'ask', label:'즉시 질문', desc:'바로 답변', long:'궁금한 점을 바로 물어보세요!', icon:<MaterialIcons name="help-outline" size={24} color={ACCENT} />, type:'ask' },
     { key:'quiz', label:'스피드 퀴즈', desc:'5문항', long:'생성된 문제를 바탕으로 빠르게 퀴즈를 풀어요.', icon:<MaterialCommunityIcons name="flash-outline" size={26} color={ACCENT} />, type:'quiz' },
-    { key:'ai', label:'AI 문제생성', desc:'자동 생성', long:'AI가 자동으로 학습 문제를 만들어줘요.', icon:<MaterialCommunityIcons name="robot-outline" size={24} color={ACCENT} />, type:'ai' },
+    { key:'ai', label:'AI 문제생성', desc:'자동 생성', long:'AI가 학습 문제를 만들어줘요.', icon:<MaterialCommunityIcons name="robot-outline" size={24} color={ACCENT} />, type:'ai' },
   ];
   const visibleGoals = goals.slice(0,3);
 
@@ -158,15 +160,15 @@ function HomeScreen() {
           )}
         </View>
 
-        {/* Tiles 2x2 (description inside each tile) */}
-        <View style={{ flexDirection:'row', flexWrap:'wrap', justifyContent:'center', marginTop:4 }}>
+        {/* Tiles 2x2 (간격 축소 & 목표 카드 폭(90%) 정렬) */}
+        <View style={{ flexDirection:'row', flexWrap:'wrap', justifyContent:'space-between', width:'90%', alignSelf:'center', marginTop:4 }}>
           {tiles.map(t => (
-            <TouchableOpacity key={t.key} activeOpacity={0.9} onPress={() => onPressCard(t.type)} style={{ width:'44%', marginHorizontal:'3%', marginBottom:18 }}>
-              <View style={{ backgroundColor: SURFACE, borderWidth:1, borderColor:BORDER, borderRadius:20, padding:14, minHeight:170, justifyContent:'flex-start', alignItems:'center', ...SHADOW }}>
-                <View style={{ width:54, height:54, borderRadius:16, backgroundColor: ACCENT_SOFT, alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:BORDER, marginBottom:12 }}>
+            <TouchableOpacity key={t.key} activeOpacity={0.9} onPress={() => onPressCard(t.type)} style={{ width:'48%', marginBottom:14 }}>
+              <View style={{ backgroundColor: SURFACE, borderWidth:1, borderColor:BORDER, borderRadius:20, padding:13, minHeight:165, justifyContent:'flex-start', alignItems:'center', ...SHADOW }}>
+                <View style={{ width:52, height:52, borderRadius:15, backgroundColor: ACCENT_SOFT, alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:BORDER, marginBottom:10 }}>
                   {t.icon}
                 </View>
-                <Text style={{ fontSize:15, fontWeight:'900', color: INK, textAlign:'center', width:'100%' }} numberOfLines={1}>{t.label}</Text>
+                <Text style={{ fontSize:14.5, fontWeight:'900', color: INK, textAlign:'center', width:'100%' }} numberOfLines={1}>{t.label}</Text>
                 <Text style={{ fontSize:11, color: SUBTLE, marginTop:6, fontWeight:'600', textAlign:'center', lineHeight:16 }} numberOfLines={4}>{t.long}</Text>
               </View>
             </TouchableOpacity>
@@ -620,6 +622,20 @@ function SettingsScreen() {
   );
 }
 
+// Snap & Ask Screen 동적 import (탭 초기 로드 가볍게)
+const SnapScreen = React.lazy(() => import('../screens/SnapScreen'));
+const AskScreen = React.lazy(() => import('../screens/AskScreen'));
+
+function HomeStack() {
+  return (
+    <HomeStackNav.Navigator screenOptions={{ headerShown:false }}>
+      <HomeStackNav.Screen name="HomeRoot" component={HomeScreen} />
+  <HomeStackNav.Screen name="Snap" component={SnapScreen} />
+  <HomeStackNav.Screen name="Ask" component={AskScreen} />
+    </HomeStackNav.Navigator>
+  );
+}
+
 export default function MainTabs() {
   return (
     <Tab.Navigator
@@ -639,7 +655,7 @@ export default function MainTabs() {
     >
       <Tab.Screen
         name="Home"
-        component={HomeScreen}
+        component={HomeStack}
         options={{
           tabBarLabel: '홈',
           tabBarIcon: ({ color, size }) => <MaterialIcons name="home-filled" color={color} size={size} />,
