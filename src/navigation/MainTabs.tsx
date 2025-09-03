@@ -1,5 +1,6 @@
 import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useFocusEffect } from '@react-navigation/native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import {
@@ -16,6 +17,8 @@ import {
   Dimensions,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Easing,
+  BackHandler,
 } from 'react-native';
 
 const Tab = createBottomTabNavigator();
@@ -30,6 +33,7 @@ const INK = '#0B1220';         // 진한 텍스트(네이비)
 const SUBTLE = '#5B667A';      // 보조 텍스트
 const BORDER = '#E6E8EE';      // 경계선
 const SUCCESS = '#16A34A';     // 완료(체크) 색상
+const DANGER = '#DC2626';      // 위험(삭제 등)
 
 // 통일된 그림자 (로그인 화면 기준)
 const SHADOW = {
@@ -39,24 +43,17 @@ const SHADOW = {
   elevation: 0.5,
 } as const;
 
-function TopBar({ title }: { title: string }) {
+function TopBar({ title, onBack }: { title: string; onBack?: () => void }) {
   return (
     <View style={{ backgroundColor: BG, borderBottomColor: BORDER, borderBottomWidth: 1 }}>
-      <View
-        style={{
-          paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0,
-          backgroundColor: BG,
-        }}
-      >
-        <View
-          style={{
-            paddingHorizontal: 20,
-            paddingVertical: 12,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Text style={{ fontSize: 18, fontWeight: '900', color: INK, letterSpacing: 0.3 }}>{title}</Text>
+      <View style={{ paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0, backgroundColor: BG }}>
+        <View style={{ paddingHorizontal: 16, paddingVertical: 10, alignItems: 'center', justifyContent:'center' }}>
+          {onBack && (
+            <TouchableOpacity onPress={onBack} style={{ position:'absolute', left:6, top:10, padding:6 }} hitSlop={{ top:8,bottom:8,left:8,right:8 }}>
+              <MaterialIcons name="arrow-back" size={24} color={INK} />
+            </TouchableOpacity>
+          )}
+          <Text style={{ fontSize: 19, fontWeight: '900', color: INK, letterSpacing: 0.3, textAlign:'center' }}>{title}</Text>
         </View>
       </View>
     </View>
@@ -99,11 +96,11 @@ function HomeScreen() {
     if (type === 'ai') showToast('AI 문제 준비중');
   };
 
-  const tiles: Array<{key:string; label:string; desc:string; icon:React.ReactNode; type: 'snap'|'ask'|'quiz'|'ai'}> = [
-    { key:'snap', label:'스냅 정리', desc:'찍고 정리', icon:<MaterialIcons name="photo-camera" size={24} color={ACCENT} />, type:'snap' },
-    { key:'ask', label:'즉시 질문', desc:'바로 답변', icon:<MaterialIcons name="help-outline" size={24} color={ACCENT} />, type:'ask' },
-    { key:'quiz', label:'스피드 퀴즈', desc:'5문항', icon:<MaterialCommunityIcons name="flash-outline" size={26} color={ACCENT} />, type:'quiz' },
-    { key:'ai', label:'AI 문제', desc:'자동 생성', icon:<MaterialCommunityIcons name="robot-outline" size={24} color={ACCENT} />, type:'ai' },
+  const tiles: Array<{key:'snap'|'ask'|'quiz'|'ai'; label:string; desc:string; long:string; icon:React.ReactNode; type: 'snap'|'ask'|'quiz'|'ai'}> = [
+    { key:'snap', label:'스냅 정리', desc:'찍고 정리', long:'사진을 찍고 PDF 변환 · 텍스트 추출 등을 할 수 있어요.', icon:<MaterialIcons name="photo-camera" size={24} color={ACCENT} />, type:'snap' },
+    { key:'ask', label:'즉시 질문', desc:'바로 답변', long:'궁금한 점을 바로 물어보세요!', icon:<MaterialIcons name="help-outline" size={24} color={ACCENT} />, type:'ask' },
+    { key:'quiz', label:'스피드 퀴즈', desc:'5문항', long:'생성된 문제를 바탕으로 빠르게 퀴즈를 풀어요.', icon:<MaterialCommunityIcons name="flash-outline" size={26} color={ACCENT} />, type:'quiz' },
+    { key:'ai', label:'AI 문제생성', desc:'자동 생성', long:'AI가 자동으로 학습 문제를 만들어줘요.', icon:<MaterialCommunityIcons name="robot-outline" size={24} color={ACCENT} />, type:'ai' },
   ];
   const visibleGoals = goals.slice(0,3);
 
@@ -118,15 +115,16 @@ function HomeScreen() {
             <Text style={{ color: SUBTLE, fontSize:12, marginTop:4 }}>목표를 하나씩 완수해요</Text>
           </View>
           <View style={{ flexDirection:'row', alignItems:'center' }}>
-            <View style={{ width:40, height:40, borderRadius:20, backgroundColor: ACCENT_SOFT, alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:BORDER, marginRight:10, ...SHADOW }}>
-              <Text style={{ fontWeight:'900', color: ACCENT }}>S</Text>
+            {/* Plan Badge */}
+            <View style={{ paddingHorizontal:10, paddingVertical:5, backgroundColor:'#FFE8CC', borderRadius:12, marginRight:8, borderWidth:1, borderColor:BORDER }}>
+              <Text style={{ fontSize:10, fontWeight:'800', color: ACCENT, letterSpacing:0.5 }}>PREMIUM</Text>
             </View>
             <Text style={{ fontSize:13, fontWeight:'800', color: INK }}>사용자</Text>
           </View>
         </View>
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal:0, paddingTop:6, paddingBottom:140 }}>
+  <ScrollView style={{ flex:1 }} contentContainerStyle={{ paddingTop:6, paddingBottom:140 }} showsVerticalScrollIndicator={false}>
         <AdCarousel />
 
         {/* Goals Card (shows first 3) */}
@@ -160,23 +158,21 @@ function HomeScreen() {
           )}
         </View>
 
-        {/* Tiles */}
-        <View style={{ flexDirection:'row', flexWrap:'wrap', justifyContent:'center' }}>
+        {/* Tiles 2x2 (description inside each tile) */}
+        <View style={{ flexDirection:'row', flexWrap:'wrap', justifyContent:'center', marginTop:4 }}>
           {tiles.map(t => (
             <TouchableOpacity key={t.key} activeOpacity={0.9} onPress={() => onPressCard(t.type)} style={{ width:'44%', marginHorizontal:'3%', marginBottom:18 }}>
-              <View style={{ backgroundColor: SURFACE, borderWidth:1, borderColor:BORDER, borderRadius:18, padding:14, minHeight:130, justifyContent:'space-between', ...SHADOW }}>
-                <View style={{ width:52, height:52, borderRadius:14, backgroundColor: ACCENT_SOFT, alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:BORDER, marginBottom:12 }}>
+              <View style={{ backgroundColor: SURFACE, borderWidth:1, borderColor:BORDER, borderRadius:20, padding:14, minHeight:170, justifyContent:'flex-start', alignItems:'center', ...SHADOW }}>
+                <View style={{ width:54, height:54, borderRadius:16, backgroundColor: ACCENT_SOFT, alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:BORDER, marginBottom:12 }}>
                   {t.icon}
                 </View>
-                <View>
-                  <Text style={{ fontSize:14, fontWeight:'900', color: INK }} numberOfLines={1}>{t.label}</Text>
-                  <Text style={{ fontSize:11, color: SUBTLE, marginTop:4 }} numberOfLines={1}>{t.desc}</Text>
-                </View>
+                <Text style={{ fontSize:15, fontWeight:'900', color: INK, textAlign:'center', width:'100%' }} numberOfLines={1}>{t.label}</Text>
+                <Text style={{ fontSize:11, color: SUBTLE, marginTop:6, fontWeight:'600', textAlign:'center', lineHeight:16 }} numberOfLines={4}>{t.long}</Text>
               </View>
             </TouchableOpacity>
           ))}
         </View>
-      </ScrollView>
+  </ScrollView>
 
       {/* All Goals Modal */}
   <Modal visible={showAllModal} animationType="fade" transparent onRequestClose={() => setShowAllModal(false)}>
@@ -246,7 +242,7 @@ function AdCarousel() {
   const horizontalPadding = 20; // 좌우 패딩 (홈 섹션 전반)
   const cardWidth = width - horizontalPadding * 2;
   const ads: Array<{id:string; title:string; subtitle:string; accent?:string; bg?:string}> = [
-    { id:'ad1', title:'AI 문제 10회 무료', subtitle:'첫 사용자 체험 기회', accent: ACCENT, bg: '#FFFFFF' },
+    { id:'ad1', title:'AI 문제생성 10회 무료', subtitle:'첫 사용자 체험 기회', accent: ACCENT, bg: '#FFFFFF' },
     { id:'ad2', title:'곧 출시 · 스터디 플랜', subtitle:'개인 맞춤 일정 추천', accent: '#0B1220', bg: '#FFFFFF' },
   ];
   const [index, setIndex] = React.useState(0);
@@ -337,6 +333,25 @@ function PlanScreen() {
 function SettingsScreen() {
   const toastOpacity = React.useRef(new Animated.Value(0)).current;
   const [toast, setToast] = React.useState('');
+  const width = Dimensions.get('window').width;
+  const currentPlan: 'free' | 'standard' | 'premium' = 'premium'; // 테스트 계정 고정
+  const plans: Array<{key:'free'|'standard'|'premium'; label:string; highlight?:boolean; desc:string; color?:string}> = [
+    { key:'free', label:'FREE', desc:'기본 기능', color:'#9AA2AF' },
+    { key:'standard', label:'STANDARD', desc:'추가 기능', color:'#586174' },
+    { key:'premium', label:'PREMIUM', desc:'모든 기능', color:ACCENT },
+  ];
+  // 로컬 상태 (서버 동기화 전 임시)
+  const [appLock, setAppLock] = React.useState(false);              // 계정 & 보안
+  const [dailyReminder, setDailyReminder] = React.useState(true);   // 알림
+  const [weeklyReport, setWeeklyReport] = React.useState(false);    // 알림
+  const [examAlert, setExamAlert] = React.useState(true);           // 알림
+  const [dataOptIn, setDataOptIn] = React.useState(false);          // 개인정보
+  // 사용량 (샘플 값)
+  const uploadsToday = 12; const uploadLimit = 30;
+  // 현재 뷰 (null = 루트)
+  type SettingsSection = 'account'|'subscription'|'notifications'|'privacy'|'about';
+  const [section, setSection] = React.useState<SettingsSection|null>(null);
+  const [renderingSection, setRenderingSection] = React.useState<SettingsSection|null>(null); // 애니메이션 표시용
   const showToast = (msg: string) => {
     setToast(msg);
     Animated.timing(toastOpacity, { toValue: 1, duration: 150, useNativeDriver: true }).start(() => {
@@ -345,22 +360,256 @@ function SettingsScreen() {
       }, 1600);
     });
   };
+  const Toggle = ({ value, onToggle }: { value:boolean; onToggle:()=>void }) => (
+    <TouchableOpacity onPress={onToggle} activeOpacity={0.8} style={{ width:50, height:28, borderRadius:18, padding:3, backgroundColor: value?ACCENT_SOFT:'#F0F2F6', borderWidth:1, borderColor:value?ACCENT:BORDER, justifyContent:'center' }}>
+      <Animated.View style={{ alignSelf: value?'flex-end':'flex-start', width:22, height:22, borderRadius:11, backgroundColor: value?ACCENT:'#FFFFFF', borderWidth:1, borderColor:BORDER }} />
+    </TouchableOpacity>
+  );
+  const Card = ({ children, style } : { children:React.ReactNode; style?:any }) => (
+    <View style={[{ backgroundColor:SURFACE, borderRadius:16, borderWidth:1, borderColor:BORDER, padding:14, ...SHADOW }, style]}>{children}</View>
+  );
+  // 섹션 타이틀 맵 (TopBar 표기용)
+  const sectionTitleMap: Record<SettingsSection,string> = {
+    account: '계정 & 보안',
+    subscription: '구독 & 사용량',
+    notifications: '알림',
+    privacy: '개인정보 & 데이터',
+    about: '앱 정보 & 지원',
+  };
+  // 루트 항목 정의
+  const rootItems: Array<{key:SettingsSection; title:string; desc:string; icon:string}> = [
+    { key:'account', title:'계정 & 보안', desc:'프로필 · 비밀번호 · 기기', icon:'person' },
+    { key:'subscription', title:'구독 & 사용량', desc:'플랜 · 업로드 한도', icon:'workspace-premium' },
+    { key:'notifications', title:'알림', desc:'목표 · 리포트 · 일정', icon:'notifications-active' },
+    { key:'privacy', title:'개인정보 & 데이터', desc:'내보내기 · 캐시 · 동의', icon:'privacy-tip' },
+    { key:'about', title:'앱 정보 & 지원', desc:'버전 · 약관 · 문의', icon:'info' },
+  ];
+
+  // 화면 이탈 시 루트로 리셋
+  // 슬라이드 애니메이션 값 (0 = 루트, 1 = 섹션)
+  const sectionAnim = React.useRef(new Animated.Value(0)).current;
+  useFocusEffect(
+    React.useCallback(() => {
+      return () => {
+        setSection(null);
+        setRenderingSection(null);
+        sectionAnim.setValue(0);
+      };
+    }, [sectionAnim])
+  );
+
+  // 섹션별 렌더
+  const renderSection = () => {
+    if (!renderingSection) return null;
+    if (renderingSection === 'account') return (
+      <Card>
+        <View style={{ flexDirection:'row', alignItems:'center', marginBottom:16 }}>
+          <View style={{ flex:1 }}>
+            <Text style={{ color: INK, fontSize:14, fontWeight:'800' }}>사용자</Text>
+            <Text style={{ color: SUBTLE, fontSize:12, marginTop:4 }}>example@domain.com</Text>
+          </View>
+          <TouchableOpacity onPress={()=>showToast('프로필 편집 준비중')} style={{ paddingHorizontal:14, paddingVertical:8, borderRadius:10, backgroundColor:ACCENT_SOFT, borderWidth:1, borderColor:BORDER }}>
+            <Text style={{ fontSize:12, fontWeight:'700', color:ACCENT }}>편집</Text>
+          </TouchableOpacity>
+        </View>
+        {[
+          { k:'연동 계정 관리', a:() => showToast('OAuth 연동 준비중') },
+          { k:'비밀번호 변경', a:() => showToast('비밀번호 변경 준비중') },
+          { k:'모든 기기 로그아웃', a:() => showToast('전체 로그아웃 준비중') },
+        ].map(item => (
+          <TouchableOpacity key={item.k} onPress={item.a} style={{ paddingVertical:10 }}>
+            <Text style={{ color: INK, fontSize:13, fontWeight:'600' }}>{item.k}</Text>
+          </TouchableOpacity>
+        ))}
+  <View style={{ paddingVertical:10, flexDirection:'row', alignItems:'center', justifyContent:'space-between' }}>
+          <Text style={{ color: INK, fontSize:13, fontWeight:'600' }}>앱 잠금 (지문/Face ID)</Text>
+          <Toggle value={appLock} onToggle={()=>setAppLock(v=>!v)} />
+        </View>
+        <TouchableOpacity onPress={()=>showToast('계정 삭제 플로우 준비중')} style={{ paddingVertical:12, marginTop:4 }}>
+          <Text style={{ color: DANGER, fontSize:13, fontWeight:'700' }}>계정 삭제</Text>
+        </TouchableOpacity>
+      </Card>
+    );
+  if (renderingSection === 'subscription') return (
+      <Card>
+        <View style={{ flexDirection:'row', alignItems:'center', marginBottom:10 }}>
+          <Text style={{ color: INK, fontSize:14, fontWeight:'800', flex:1 }}>현재 구독플랜</Text>
+          <View style={{ paddingHorizontal:10, paddingVertical:5, backgroundColor:'#FFE8CC', borderRadius:12, borderWidth:1, borderColor:BORDER }}>
+            <Text style={{ fontSize:10, fontWeight:'800', color: ACCENT }}>{currentPlan.toUpperCase()}</Text>
+          </View>
+        </View>
+        <Text style={{ color: SUBTLE, fontSize:12 }}>Premium 테스트 계정 · 업그레이드 기능 준비중</Text>
+        <View style={{ flexDirection:'row', marginTop:12 }}>
+          {plans.map(p=>{ const active=p.key===currentPlan; return (
+            <TouchableOpacity key={p.key} onPress={()=>showToast(active?'현재 플랜입니다':'변경 준비중')} style={{ flex:1, marginRight:8, paddingVertical:10, borderRadius:12, borderWidth:1, borderColor:active?ACCENT:BORDER, backgroundColor:active?ACCENT_SOFT:'#FFF', alignItems:'center' }}>
+              <Text style={{ fontSize:11, fontWeight:'800', color:p.color||INK }}>{p.label}</Text>
+            </TouchableOpacity>
+          );})}
+        </View>
+        <TouchableOpacity onPress={()=>showToast('구독 관리(스토어) 이동 준비중')} style={{ marginTop:12 }}>
+          <Text style={{ fontSize:13, fontWeight:'600', color:ACCENT }}>구독 관리</Text>
+        </TouchableOpacity>
+        <View style={{ marginTop:20 }}>
+          <Text style={{ fontSize:12, fontWeight:'700', color:SUBTLE }}>오늘 업로드 {uploadsToday}/{uploadLimit}</Text>
+          <View style={{ height:8, borderRadius:4, backgroundColor:'#ECEFF3', marginTop:6, overflow:'hidden' }}>
+            <View style={{ width:`${Math.min(100, uploadsToday/uploadLimit*100)}%`, backgroundColor:ACCENT, height:'100%' }} />
+          </View>
+        </View>
+        <TouchableOpacity onPress={()=>showToast('월간 통계 준비중')} style={{ marginTop:16 }}>
+          <Text style={{ fontSize:12, color:ACCENT, fontWeight:'700' }}>월간 이용 통계</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={()=>showToast('영수증 / 결제내역 준비중')} style={{ marginTop:10 }}>
+          <Text style={{ fontSize:12, color:ACCENT, fontWeight:'700' }}>영수증 / 결제내역</Text>
+        </TouchableOpacity>
+      </Card>
+    );
+  if (renderingSection === 'notifications') return (
+      <Card>
+        <View style={{ flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingVertical:8 }}>
+          <View>
+            <Text style={{ fontSize:13, fontWeight:'600', color:INK }}>일일 목표 리마인더</Text>
+            <TouchableOpacity onPress={()=>showToast('시간 설정 준비중')} style={{ marginTop:4 }}>
+              <Text style={{ fontSize:11, color:ACCENT, fontWeight:'600' }}>08:00 변경</Text>
+            </TouchableOpacity>
+          </View>
+          <Toggle value={dailyReminder} onToggle={()=>setDailyReminder(v=>!v)} />
+        </View>
+        <View style={{ flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingVertical:8 }}>
+          <Text style={{ fontSize:13, fontWeight:'600', color:INK }}>주간 리포트</Text>
+          <Toggle value={weeklyReport} onToggle={()=>setWeeklyReport(v=>!v)} />
+        </View>
+        <View style={{ flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingVertical:8 }}>
+          <Text style={{ fontSize:13, fontWeight:'600', color:INK }}>시험 일정 알림</Text>
+          <Toggle value={examAlert} onToggle={()=>setExamAlert(v=>!v)} />
+        </View>
+      </Card>
+    );
+  if (renderingSection === 'privacy') return (
+      <Card>
+        <TouchableOpacity onPress={()=>showToast('데이터 내보내기 준비중')} style={{ paddingVertical:10 }}>
+          <Text style={{ fontSize:13, fontWeight:'600', color:INK }}>데이터 내보내기 (PDF/텍스트)</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={()=>showToast('캐시 삭제 준비중')} style={{ paddingVertical:10 }}>
+          <Text style={{ fontSize:13, fontWeight:'600', color:INK }}>캐시 삭제</Text>
+        </TouchableOpacity>
+        <View style={{ flexDirection:'row', justifyContent:'space-between', alignItems:'center', paddingVertical:10 }}>
+          <Text style={{ fontSize:13, fontWeight:'600', color:INK }}>모델 개선용 데이터 활용 동의</Text>
+          <Toggle value={dataOptIn} onToggle={()=>setDataOptIn(v=>!v)} />
+        </View>
+      </Card>
+    );
+  if (renderingSection === 'about') return (
+      <Card>
+        <TouchableOpacity onPress={()=>showToast('변경 로그 준비중')} style={{ paddingTop:4 }}>
+          <Text style={{ fontSize:13, fontWeight:'600', color:ACCENT }}>변경 로그</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={()=>showToast('약관 보기 준비중')} style={{ paddingTop:8 }}>
+          <Text style={{ fontSize:13, fontWeight:'600', color:ACCENT }}>서비스 이용약관</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={()=>showToast('개인정보 처리방침 준비중')} style={{ paddingTop:8 }}>
+          <Text style={{ fontSize:13, fontWeight:'600', color:ACCENT }}>개인정보 처리방침</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={()=>showToast('피드백 메일 준비중')} style={{ paddingTop:8 }}>
+          <Text style={{ fontSize:13, fontWeight:'600', color:ACCENT }}>문의 / 피드백</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={()=>showToast('오픈소스 라이선스 준비중')} style={{ paddingTop:8 }}>
+          <Text style={{ fontSize:13, fontWeight:'600', color:ACCENT }}>오픈소스 라이선스</Text>
+        </TouchableOpacity>
+      </Card>
+    );
+    return null;
+  };
+  // 섹션 진입/복귀 애니메이션
+  const openSection = (key: SettingsSection) => {
+    setRenderingSection(key);
+    setSection(key); // 즉시 헤더 반영
+    requestAnimationFrame(() => {
+      Animated.timing(sectionAnim, { toValue:1, duration:260, easing:Easing.out(Easing.cubic), useNativeDriver:true }).start();
+    });
+  };
+  const goBack = () => {
+    setSection(null); // 헤더 즉시 '설정'으로
+    Animated.timing(sectionAnim, { toValue:0, duration:240, easing:Easing.out(Easing.cubic), useNativeDriver:true }).start(()=>{
+      setRenderingSection(null);
+    });
+  };
+  // 안드로이드 하드웨어 뒤로가기 처리: 섹션 내부라면 루트로
+  React.useEffect(() => {
+    const onHardwareBack = () => {
+      if (renderingSection) {
+        goBack();
+        return true; // 기본 동작 방지
+      }
+      return false; // 기본 (탭/앱) 뒤로가기 진행
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
+    return () => sub.remove();
+  }, [renderingSection, goBack]);
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: BG }}>
       <StatusBar barStyle="dark-content" backgroundColor={BG} />
-      <TopBar title="설정" />
-      <View style={{ flex: 1, backgroundColor: BG, padding: 20 }}>
-        <View style={{ backgroundColor: SURFACE, borderRadius: 16, borderWidth: 1, borderColor: BORDER, padding: 16, marginBottom: 12 }}>
-          <Text style={{ color: INK, fontSize: 15, fontWeight: '900' }}>계정</Text>
-          <Text style={{ color: SUBTLE, fontSize: 13, marginTop: 6 }}>example@domain.com</Text>
-        </View>
-        <TouchableOpacity
-          onPress={() => showToast('로그아웃 준비중')}
-          style={{ height: 50, backgroundColor: ACCENT, borderRadius: 14, alignItems: 'center', justifyContent: 'center', marginTop: 10 }}
-          activeOpacity={0.9}
+      <TopBar title={section ? sectionTitleMap[section] : '설정'} onBack={section ? goBack : undefined} />
+      <View style={{ flex:1, backgroundColor:BG, position:'relative' }}>
+        {/* 루트 목록 */}
+        <ScrollView
+          style={{ flex:1 }}
+          contentContainerStyle={{ paddingBottom:120 }}
+          showsVerticalScrollIndicator={false}
+          pointerEvents={section ? 'none':'auto'}
         >
-          <Text style={{ color: '#1A1A1A', fontWeight: '900', fontSize: 15 }}>로그아웃</Text>
-        </TouchableOpacity>
+          <View>
+            {rootItems.map((it, idx) => (
+              <TouchableOpacity
+                key={it.key}
+                onPress={()=>openSection(it.key)}
+                activeOpacity={0.8}
+                style={{
+                  backgroundColor:SURFACE,
+                  borderTopWidth: idx===0 ? 0 : 1,
+                  borderBottomWidth:1,
+                  borderColor:BORDER,
+                  paddingVertical:18,
+                  paddingHorizontal:20,
+                  flexDirection:'row',
+                  alignItems:'center',
+                }}>
+                <View style={{ width:50, height:50, borderRadius:14, backgroundColor:ACCENT_SOFT, alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:BORDER, marginRight:18 }}>
+                  <MaterialIcons name={it.icon as any} size={24} color={ACCENT} />
+                </View>
+                <View style={{ flex:1 }}>
+                  <Text style={{ fontSize:16, fontWeight:'900', color:INK, textAlign:'left' }}>{it.title}</Text>
+                  <Text style={{ fontSize:12, color:SUBTLE, marginTop:6 }}>{it.desc}</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={24} color={SUBTLE} />
+              </TouchableOpacity>
+            ))}
+          </View>
+          <View style={{ marginTop:40, alignItems:'center' }}>
+            <Text style={{ fontSize:11, color:SUBTLE, fontWeight:'600' }}>버전 1.0.0</Text>
+          </View>
+        </ScrollView>
+        {/* 섹션 화면 (슬라이드) */}
+    {renderingSection && (
+          <Animated.View
+            style={{
+              position:'absolute',
+              top:0,
+              left:0,
+              right:0,
+              bottom:0,
+              backgroundColor:BG,
+              transform:[{ translateX: sectionAnim.interpolate({ inputRange:[0,1], outputRange:[width,0] }) }],
+            }}
+      pointerEvents={renderingSection ? 'auto':'none'}
+          >
+            <ScrollView style={{ flex:1 }} contentContainerStyle={{ padding:20, paddingBottom:140 }} showsVerticalScrollIndicator={false}>
+              {renderSection()}
+              <View style={{ marginTop:40, alignItems:'center' }}>
+                <Text style={{ fontSize:11, color:SUBTLE, fontWeight:'600' }}>버전 1.0.0</Text>
+              </View>
+            </ScrollView>
+          </Animated.View>
+        )}
       </View>
       <Animated.View pointerEvents={toast ? 'auto' : 'none'} style={{ position:'absolute', bottom:90, left:0, right:0, alignItems:'center', opacity:toastOpacity }}>
         <View style={{ backgroundColor: SURFACE, borderRadius:14, borderWidth:1, borderColor:BORDER, paddingHorizontal:16, paddingVertical:12, ...SHADOW, maxWidth:'80%' }}>
