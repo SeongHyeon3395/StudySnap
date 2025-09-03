@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+
 import {
   View,
   Text,
@@ -286,7 +287,7 @@ function AdCarousel() {
               {ad.title}
             </Text>
             <Text style={{ fontSize: 13, color: SUBTLE, marginTop: 10, fontWeight: '600' }}>{ad.subtitle}</Text>
-            <Text style={{ position:'absolute', bottom:8, right:12, fontSize:9, color:'#9AA2AF', fontWeight:'600' }}>광고</Text>
+            <Text style={{ position:'absolute', bottom:8, right:12, fontSize:9, color:'#9AA2AF', fontWeight:'600' }}>무료</Text>
           </View>
         ))}
       </ScrollView>
@@ -622,16 +623,16 @@ function SettingsScreen() {
   );
 }
 
-// Snap & Ask Screen 동적 import (탭 초기 로드 가볍게)
+// Snap & Ask Screen import
 const SnapScreen = React.lazy(() => import('../screens/SnapScreen'));
-const AskScreen = React.lazy(() => import('../screens/AskScreen'));
+import AskScreen from '../screens/AskScreen';
 
-function HomeStack() {
+function HomeStackScreen() {
   return (
     <HomeStackNav.Navigator screenOptions={{ headerShown:false }}>
-      <HomeStackNav.Screen name="HomeRoot" component={HomeScreen} />
-  <HomeStackNav.Screen name="Snap" component={SnapScreen} />
-  <HomeStackNav.Screen name="Ask" component={AskScreen} />
+      <HomeStackNav.Screen name="HomeMain" component={HomeScreen} />
+      <HomeStackNav.Screen name="Snap" component={SnapScreen} />
+      <HomeStackNav.Screen name="Ask" component={AskScreen} />
     </HomeStackNav.Navigator>
   );
 }
@@ -655,7 +656,7 @@ export default function MainTabs() {
     >
       <Tab.Screen
         name="Home"
-        component={HomeStack}
+  component={HomeStackScreen}
         options={{
           tabBarLabel: '홈',
           tabBarIcon: ({ color, size }) => <MaterialIcons name="home-filled" color={color} size={size} />,

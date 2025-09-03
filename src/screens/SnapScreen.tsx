@@ -24,14 +24,15 @@ const SHADOW = {
 };
 
 type PickedFile = {
-  type: 'image';
+  type: 'image' | 'pdf';
   name: string;
   uri: string;
   size?: number;
+  pages?: number; // pdf 페이지 수 (간이 검증 — 실제 PDF 파싱 대신 placeholder)
   asset?: Asset;
 };
 
-export default function SnapScreen() {
+export default function SnapScreen({ navigation }: any) {
   const [file, setFile] = useState<PickedFile | null>(null);
   const [extracting, setExtracting] = useState(false);
   const scanAnim = useRef(new Animated.Value(0)).current;
@@ -53,9 +54,9 @@ export default function SnapScreen() {
     }
   }, [extracting, scanAnim]);
 
-  // 파일 업로드 기능 (PDF/갤러리) 임시 비활성화: 문구 안내
-  const pickFile = async () => {
-    showAlert('기능 준비중', '파일 선택 / PDF 업로드 기능은 현재 비활성화되어 있습니다.');
+  // 파일 업로드 기능 제거(모듈 삭제) - placeholder
+  const pickFile = () => {
+    showAlert('기능 준비 중', '현재 버전에서는 파일 업로드 기능이 비활성화되어 있습니다.\n추후 업데이트에서 제공될 예정입니다.');
   };
 
   // 커스텀 알림 (앱 스타일 모달)
@@ -181,17 +182,33 @@ export default function SnapScreen() {
       <StatusBar barStyle="dark-content" backgroundColor={BG} />
       {/* 상단 바 */}
       <View style={{ paddingTop: Platform.OS==='android' ? (StatusBar.currentHeight||0) : 0, borderBottomWidth:1, borderColor:BORDER, backgroundColor:BG }}>
-        <View style={{ flexDirection:'row', alignItems:'center', paddingHorizontal:12, paddingVertical:10 }}>
-          <TouchableOpacity onPress={reset} disabled={!file && !extractedText} style={{ width:34, height:34, borderRadius:10, alignItems:'center', justifyContent:'center' }}>
-            {(file || extractedText) && <MaterialIcons name="close" size={24} color={INK} />}
+        <View style={{ flexDirection:'row', alignItems:'center', paddingHorizontal:8, paddingVertical:10 }}>
+          {/* Back Button */}
+          <TouchableOpacity
+            onPress={() => {
+              if (navigation && navigation.canGoBack && navigation.canGoBack()) navigation.goBack();
+              else reset();
+            }}
+            style={{ width:40, height:40, borderRadius:12, alignItems:'center', justifyContent:'center' }}
+            hitSlop={{ top:8,bottom:8,left:8,right:8 }}
+          >
+            <MaterialIcons name="arrow-back" size={24} color={INK} />
           </TouchableOpacity>
           <Text style={{ flex:1, textAlign:'center', fontSize:18, fontWeight:'900', color:INK }}>스냅 정리</Text>
-          <View style={{ width:34 }} />
+          {/* Reset / Close on right */}
+          <TouchableOpacity
+            onPress={reset}
+            disabled={!file && !extractedText}
+            style={{ width:40, height:40, borderRadius:12, alignItems:'center', justifyContent:'center', opacity: (!file && !extractedText)?0.2:1 }}
+            hitSlop={{ top:8,bottom:8,left:8,right:8 }}
+          >
+            <MaterialIcons name="close" size={22} color={INK} />
+          </TouchableOpacity>
         </View>
       </View>
 
       <ScrollView contentContainerStyle={{ flexGrow:1, padding:20 }} showsVerticalScrollIndicator={false}>
-  {!file && !extractedText && !extracting && (
+        {!file && !extractedText && !extracting && (
           <View style={{ flex:1, justifyContent:'center', minHeight:600 }}>
             <Text style={{ fontSize:16, fontWeight:'900', color:INK, marginBottom:20, textAlign:'center' }}>무엇을 할까요?</Text>
             <View style={{ paddingHorizontal:16 }}>
@@ -206,15 +223,15 @@ export default function SnapScreen() {
                 <MaterialIcons name="chevron-right" size={24} color={SUBTLE} />
               </TouchableOpacity>
               
-              <TouchableOpacity onPress={pickFile} style={{ width:'100%', backgroundColor:'#F0F2F6', borderWidth:1, borderColor:BORDER, borderRadius:18, padding:20, flexDirection:'row', alignItems:'center', opacity:0.6 }}>
-                <View style={{ width:48, height:48, borderRadius:14, backgroundColor:'#E4E7EC', alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:BORDER }}>
-                  <MaterialIcons name="upload-file" size={26} color={SUBTLE} />
+              <TouchableOpacity onPress={pickFile} style={{ width:'100%', backgroundColor:'#F3F4F6', borderWidth:1, borderColor:BORDER, borderRadius:18, padding:20, flexDirection:'row', alignItems:'center', opacity:0.7 }}>
+                <View style={{ width:48, height:48, borderRadius:14, backgroundColor:'#E5E7EB', alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:BORDER }}>
+                  <MaterialIcons name="block" size={26} color={SUBTLE} />
                 </View>
                 <View style={{ marginLeft:16, flex:1 }}>
-                  <Text style={{ fontSize:16, fontWeight:'800', color:SUBTLE }}>파일 업로드 (준비중)</Text>
-                  <Text style={{ fontSize:12, color:SUBTLE, marginTop:4, lineHeight:16 }}>추후 PDF/이미지 업로드 제공 예정</Text>
+                  <Text style={{ fontSize:16, fontWeight:'800', color:SUBTLE }}>파일 업로드 (비활성화)</Text>
+                  <Text style={{ fontSize:12, color:SUBTLE, marginTop:4, lineHeight:16 }}>추후 업데이트 예정</Text>
                 </View>
-                <MaterialIcons name="lock" size={20} color={SUBTLE} />
+                <MaterialIcons name="info" size={20} color={SUBTLE} />
               </TouchableOpacity>
             </View>
           </View>
@@ -222,9 +239,16 @@ export default function SnapScreen() {
 
         {file && !extracting && !extractedText && (
           <View>
-            <Text style={{ fontSize:15, fontWeight:'800', color:INK, marginBottom:12 }}>선택된 이미지</Text>
+            <Text style={{ fontSize:15, fontWeight:'800', color:INK, marginBottom:12 }}>선택된 {file.type === 'pdf' ? 'PDF' : '이미지'}</Text>
             <View style={{ backgroundColor:SURFACE, borderWidth:1, borderColor:BORDER, borderRadius:18, padding:16, ...SHADOW }}>
-              <Image source={{ uri: file.uri }} style={{ width:'100%', height:260, borderRadius:12, backgroundColor:'#DDD' }} resizeMode="contain" />
+              {file.type === 'image' ? (
+                <Image source={{ uri: file.uri }} style={{ width:'100%', height:260, borderRadius:12, backgroundColor:'#DDD' }} resizeMode="contain" />
+              ) : (
+                <View style={{ height:260, borderRadius:12, backgroundColor:'#FAFAFC', borderWidth:1, borderColor:BORDER, alignItems:'center', justifyContent:'center' }}>
+                  <MaterialIcons name="picture-as-pdf" size={60} color={ACCENT} />
+                  <Text style={{ fontSize:12, marginTop:8, color:SUBTLE }}>{file.pages} 페이지</Text>
+                </View>
+              )}
               <View style={{ flexDirection:'row', marginTop:14 }}>
                 <TouchableOpacity onPress={()=>setFile(null)} style={{ flex:1, paddingVertical:12, borderRadius:12, backgroundColor:ACCENT_SOFT, borderWidth:1, borderColor:BORDER, alignItems:'center', marginRight:8 }}>
                   <Text style={{ color:ACCENT, fontWeight:'800' }}>다시 선택</Text>
