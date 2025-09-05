@@ -1,4 +1,3 @@
-
 import React, { useState, useRef } from 'react';
 import {
   View,
@@ -16,8 +15,9 @@ import { useAppAlert } from '../components/AppAlertProvider';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
 import { Animated, Easing, Dimensions } from 'react-native';
-
+import { signInWithEmail, signUpWithEmailAndProfile, sendPhoneCode, verifyPhoneCode, findAccountByPhoneOtp, sendPasswordReset } from '../logic/auth';
 type Props = { navigation?: any };
+import { supabase } from '../lib/supabase';
 
 export default function LoginScreen({ navigation }: Props) {
   const appAlert = useAppAlert();
@@ -51,6 +51,19 @@ export default function LoginScreen({ navigation }: Props) {
   // 계정 찾기 전용 인증 상태
   const [findCodeSent, setFindCodeSent] = useState(false);
   const [findOtp, setFindOtp] = useState('');
+  // 전화번호 인증 완료 여부
+  const [phoneVerified, setPhoneVerified] = useState(false);
+
+  // 비밀번호 규칙 플래그
+  const pwLenOk = suPassword.length >= 6 && suPassword.length <= 16;
+  const pwMixOk = /[A-Za-z]/.test(suPassword) && /[0-9]/.test(suPassword);
+  const pwSpecialOk = /[^A-Za-z0-9]/.test(suPassword);
+  const pwAllOk = pwLenOk && pwMixOk && pwSpecialOk;
+  const pwConfirmMismatch = suPassword2.length > 0 && suPassword !== suPassword2;
+  const nameFilled = suName.length > 0;
+  const nameValid = /^[A-Za-z가-힣]{2,}$/.test(suName);
+  const emailFilled = suEmail.length > 0;
+  const emailValid = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(suEmail);
 
   // THEME — Neutral + Orange Accent + Deep Navy
   const BG = '#F6F7FB';        // 뉴트럴 배경(차분한 라이트 그레이-블루)
@@ -94,22 +107,18 @@ export default function LoginScreen({ navigation }: Props) {
     });
   };
 
-  const onLoginPress = () => {
-    if (!email || !password) {
-      appAlert('로그인', '이메일과 비밀번호를 입력해주세요.');
-      return;
+  // 1) 로그인
+  const onLoginPress = async () => {
+    try {
+      if (!email || !password) { appAlert('로그인','이메일/비밀번호를 입력해주세요.'); return; }
+      await signInWithEmail(email, password);
+      navigation?.replace?.('Main');
+    } catch (e:any) {
+      appAlert('로그인 실패', e.message || String(e));
     }
-    appAlert('로그인', '로그인 성공(예시). 메인 화면으로 이동합니다.', [
-      { text: '확인', onPress: () => navigation?.replace?.('Main') ?? null },
-    ]);
   };
 
-  const onSendCode = () => {
-  if (!suPhone) { appAlert('인증', '휴대폰 번호를 입력하세요.'); return; }
-    // TODO: 인증코드 발송 API 연동
-    setCodeSent(true);
-  appAlert('인증', '인증코드를 전송했습니다. 6자리 코드를 입력하세요.');
-  };
+  
 
   const formatPhone = (raw: string) => {
     const digits = raw.replace(/\D/g, '');
@@ -133,40 +142,99 @@ export default function LoginScreen({ navigation }: Props) {
     return digits.slice(0,4) + '.' + digits.slice(4,6) + '.' + digits.slice(6,8);
   };
 
-  const onSignUp = () => {
-    if (!suName || !suEmail || !suBirth || !suPhone) { appAlert('회원가입', '모든 필드를 입력해주세요.'); return; }
-    if (suBirth.length !== 10) { appAlert('회원가입', '생년월일을 YYYY.MM.DD 형식으로 입력해주세요.'); return; }
-    const birthDigits = suBirth.replace(/\D/g, '');
-    const by = parseInt(birthDigits.slice(0,4),10);
-    const bm = parseInt(birthDigits.slice(4,6),10);
-    const bd = parseInt(birthDigits.slice(6,8),10);
-    if (by < 1900 || by > 2100 || bm < 1 || bm > 12 || bd < 1 || bd > 31) { appAlert('회원가입', '생년월일 값이 올바르지 않습니다.'); return; }
-    if (!suPassword || suPassword.length < 6) { appAlert('회원가입', '비밀번호는 6자 이상으로 설정해주세요.'); return; }
-    if (suPassword !== suPassword2) { appAlert('회원가입', '비밀번호가 서로 일치하지 않습니다.'); return; }
-    if (!codeSent || otp.length !== 6) { appAlert('회원가입', '휴대폰 인증을 완료해주세요. (6자리 코드)'); return; }
-    // TODO: 회원가입 API 연동
-    appAlert('회원가입', '가입이 완료되었습니다. 로그인 해주세요.', [
-      { text: '확인', onPress: () => setShowSignUp(false) },
-    ]);
+  // KR 전화번호를 E.164(+82) 형식으로 변환
+  const toE164KR = (raw: string) => {
+    const d = raw.replace(/\D/g, '');
+    if (d.startsWith('0')) return '+82' + d.slice(1);
+    if (d.startsWith('82')) return '+' + d;
+    return '+' + d;
+  };
+
+  const renderPwRule = (ok: boolean, label: string) => (
+    <View key={label} style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+      <MaterialIcons name={ok ? 'check' : 'close'} size={14} color={ok ? '#4F46E5' : '#EF4444'} />
+      <Text style={{ fontSize: 11, marginLeft: 4, color: ok ? SUBTLE : '#EF4444' }}>{label}</Text>
+    </View>
+  );
+  // 2) 회원가입 - 전화번호 인증코드 전송 (Supabase OTP)
+  const onSendCode = async () => {
+    if (!suPhone) { appAlert('인증','휴대폰 번호를 입력하세요.'); return; }
+    try {
+      const phone = toE164KR(suPhone);
+      const { error } = await supabase.auth.signInWithOtp({ phone, options:{ channel:'sms' }});
+      if (error) throw error;
+      setCodeSent(true);
+      appAlert('인증', '입력하신 번호로 인증코드를 보냈습니다.');    } catch(e:any) {
+      appAlert('전송 실패', e.message || String(e));
+    }
+  };
+  // 전화번호 OTP 검증 후 즉시 메인 이동 (테스트 간소화)
+  const onVerifyPhoneOtp = async () => {
+    if (!suPhone || otp.length !== 6) { appAlert('인증','전화번호와 6자리 코드를 확인하세요.'); return; }
+    try {
+      const phone = toE164KR(suPhone);
+      const { data, error } = await supabase.auth.verifyOtp({ phone, token: otp, type: 'sms' });
+      if (error) throw error;
+      navigation?.replace?.('Main');
+    } catch(e:any) {
+      appAlert('인증 실패', e.message || String(e));
+    }
+  };
+
+  // 3) 회원가입 - 가입 완료 (전화번호 인증은 선택이지만, 했으면 코드 확인)
+  const onSignUp = async () => {
+    try {
+  // 개별 검증
+  if (!suName) { appAlert('이름 오류','이름을 입력해주세요.'); return; }
+  if (!/^[A-Za-z가-힣]{2,}$/.test(suName)) { appAlert('이름 형식','이름은 한글/영문 2자 이상, 숫자/기호 불가입니다.'); return; }
+  if (!suEmail) { appAlert('이메일','이메일을 입력해주세요.'); return; }
+  const emailRegex = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
+  if (!emailRegex.test(suEmail)) { appAlert('이메일 형식','이메일 형식이 올바르지 않습니다.'); return; }
+  if (!suBirth) { appAlert('생년월일','생년월일을 입력해주세요.'); return; }
+  if (!suPhone) { appAlert('전화번호','전화번호를 입력해주세요.'); return; }
+  // 비밀번호 정책: 6~16자 / 영문자 & 숫자 포함 / 특수문자 1개 이상
+  if (!suPassword) { appAlert('비밀번호','비밀번호를 입력해주세요.'); return; }
+  if (!pwLenOk) { appAlert('비밀번호 길이','비밀번호는 6자 이상 16자 이하입니다.'); return; }
+  if (!pwMixOk) { appAlert('비밀번호 조합','영문자와 숫자를 모두 포함해야 합니다.'); return; }
+  if (!pwSpecialOk) { appAlert('비밀번호 특수문자','특수문자 1개 이상 포함해야 합니다.'); return; }
+  if (pwConfirmMismatch) { appAlert('비밀번호 확인','비밀번호가 일치하지 않습니다.'); return; }
+      if (codeSent) {
+        if (otp.length !== 6) { appAlert('회원가입','전화번호 인증코드를 입력하세요.'); return; }
+        await verifyPhoneCode(suPhone, otp);
+        setPhoneVerified(true);
+      }
+      await signUpWithEmailAndProfile({ name: suName, email: suEmail, birth: suBirth, phone: suPhone, password: suPassword });
+      appAlert('회원가입','가입이 완료되었습니다. 메일함에서 인증(선택) 후 로그인해주세요.', [
+        { text:'확인', onPress:()=> setShowSignUp(false) }
+      ]);
+    } catch (e:any) {
+      appAlert('가입 실패', e.message || String(e));
+    }
   };
 
   // 계정 찾기: 인증코드 전송
-  const onSendFindCode = () => {
-    if (!findPhone) { appAlert('인증', '전화번호를 입력하세요.'); return; }
-    setFindCodeSent(true);
-    appAlert('인증', '인증코드를 전송했습니다. 6자리 코드를 입력하세요.');
+  // 4) 계정 찾기 - 인증코드 전송
+  const onSendFindCode = async () => {
+    try {
+      if (!findPhone) { appAlert('인증','전화번호를 입력하세요.'); return; }
+      await sendPhoneCode(findPhone);
+      setFindCodeSent(true);
+      appAlert('인증','인증코드를 전송했습니다. 6자리 코드를 입력하세요.');
+    } catch (e:any) {
+      appAlert('인증 오류', e.message || String(e));
+    }
   };
 
   // 계정 찾기 완료 처리 (모의)
-  const onFindAccountConfirm = () => {
-    if (!findPhone) { appAlert('계정 찾기', '전화번호를 입력하세요.'); return; }
-    if (!findCodeSent) { appAlert('계정 찾기', '휴대폰 인증을 먼저 진행해주세요.'); return; }
-    if (findOtp.length !== 6) { appAlert('계정 찾기', '인증코드를 6자리로 입력해주세요.'); return; }
-    // 모의 이메일 생성 (실제 구현 시 서버 조회)
-    const digits = findPhone.replace(/\D/g, '');
-    const tail = digits.slice(-4).padStart(4, '0');
-    const mockEmail = `user${tail}@example.com`;
-    appAlert('계정 찾기', `가입된 이메일은\n${mockEmail}\n입니다.`);
+  // 5) 계정 찾기 - 코드 확인 후 이메일 마스킹 표시
+  const onFindAccountConfirm = async () => {
+    try {
+      if (!findPhone || !findCodeSent || findOtp.length !== 6) { appAlert('계정 찾기','전화번호와 6자리 코드를 확인해주세요.'); return; }
+      const masked = await findAccountByPhoneOtp(findPhone, findOtp);
+      appAlert('계정 찾기', `가입된 이메일은\n${masked}\n입니다.`);
+    } catch(e:any) {
+      appAlert('계정 찾기 실패', e.message || String(e));
+    }
   };
 
   const closeFindAccount = () => {
@@ -637,27 +705,30 @@ export default function LoginScreen({ navigation }: Props) {
             <ScrollView contentContainerStyle={{ paddingHorizontal: 24, paddingVertical: 18, backgroundColor: BG }}>
               {/* 이름 */}
               <View style={{ marginTop: 10 }}>
-                <Text style={{ fontSize: 12, color: SUBTLE, marginBottom: 8 }}>이름</Text>
+                <Text style={{ fontSize: 12, color: SUBTLE, marginBottom: 4 }}>이름</Text>
                 <TextInput
                   placeholder="홍길동"
                   placeholderTextColor="#9CA3AF"
                   value={suName}
-                  onChangeText={setSuName}
+                  onChangeText={(t)=> setSuName(t.replace(/[^A-Za-z가-힣]/g,''))}
                   style={{
                     height: 50,
                     paddingHorizontal: 14,
                     borderWidth: 1,
-                    borderColor: BORDER,
+                    borderColor: !nameFilled ? BORDER : (nameValid ? '#4F46E5' : '#EF4444'),
                     borderRadius: 14,
                     backgroundColor: SURFACE,
                     color: INK,
                   }}
                 />
+                {nameFilled && !nameValid && (
+                  <Text style={{ fontSize: 11, color: '#EF4444', marginTop: 4 }}>한글/영문만 2자 이상 (숫자/특수문자 불가)</Text>
+                )}
               </View>
 
               {/* 이메일 */}
               <View style={{ marginTop: 12 }}>
-                <Text style={{ fontSize: 12, color: SUBTLE, marginBottom: 8 }}>이메일</Text>
+                <Text style={{ fontSize: 12, color: SUBTLE, marginBottom: 4 }}>이메일</Text>
                 <TextInput
                   placeholder="name@example.com"
                   placeholderTextColor="#9CA3AF"
@@ -669,12 +740,15 @@ export default function LoginScreen({ navigation }: Props) {
                     height: 50,
                     paddingHorizontal: 14,
                     borderWidth: 1,
-                    borderColor: BORDER,
+                    borderColor: !emailFilled ? BORDER : (emailValid ? '#4F46E5' : '#EF4444'),
                     borderRadius: 14,
                     backgroundColor: SURFACE,
                     color: INK,
                   }}
                 />
+                {emailFilled && !emailValid && (
+                  <Text style={{ fontSize: 11, color: '#EF4444', marginTop: 4 }}>올바른 이메일 형식이 아닙니다.</Text>
+                )}
               </View>
 
               {/* 생년/생일 */}
@@ -701,9 +775,9 @@ export default function LoginScreen({ navigation }: Props) {
 
               {/* 비밀번호/확인 */}
               <View style={{ marginTop: 12 }}>
-                <Text style={{ fontSize: 12, color: SUBTLE, marginBottom: 8 }}>비밀번호</Text>
+                <Text style={{ fontSize: 12, color: SUBTLE, marginBottom: 4 }}>비밀번호</Text>
                 <TextInput
-                  placeholder="6자 이상"
+                  placeholder="6~16자, 영문+숫자+특수문자"
                   placeholderTextColor="#9CA3AF"
                   secureTextEntry
                   value={suPassword}
@@ -712,15 +786,23 @@ export default function LoginScreen({ navigation }: Props) {
                     height: 50,
                     paddingHorizontal: 14,
                     borderWidth: 1,
-                    borderColor: BORDER,
+                    borderColor: !suPassword ? BORDER : (pwAllOk ? '#4F46E5' : '#EF4444'),
                     borderRadius: 14,
                     backgroundColor: SURFACE,
                     color: INK,
                   }}
                 />
+                {/* 비밀번호 규칙 체크 리스트 */}
+                {suPassword.length > 0 && (
+                  <View style={{ marginTop: 8, marginBottom: 2 }}>
+                    {renderPwRule(pwLenOk, '6자 이상, 16자 이하')}
+                    {renderPwRule(pwMixOk, '영문자와 숫자 포함')}
+                    {renderPwRule(pwSpecialOk, '특수문자 1개 이상 포함')}
+                  </View>
+                )}
               </View>
               <View style={{ marginTop: 12 }}>
-                <Text style={{ fontSize: 12, color: SUBTLE, marginBottom: 8 }}>비밀번호 확인</Text>
+                <Text style={{ fontSize: 12, color: SUBTLE, marginBottom: 4 }}>비밀번호 확인</Text>
                 <TextInput
                   placeholder="비밀번호 다시 입력"
                   placeholderTextColor="#9CA3AF"
@@ -731,12 +813,15 @@ export default function LoginScreen({ navigation }: Props) {
                     height: 50,
                     paddingHorizontal: 14,
                     borderWidth: 1,
-                    borderColor: BORDER,
+                    borderColor: !suPassword2 ? BORDER : (pwConfirmMismatch ? '#EF4444' : '#4F46E5'),
                     borderRadius: 14,
                     backgroundColor: SURFACE,
                     color: INK,
                   }}
                 />
+                {pwConfirmMismatch && (
+                  <Text style={{ fontSize: 11, color: '#EF4444', marginTop: 4 }}>비밀번호가 일치하지 않습니다.</Text>
+                )}
               </View>
 
               {/* 전화번호 + 인증 */}
@@ -1043,12 +1128,14 @@ export default function LoginScreen({ navigation }: Props) {
               </View>
 
               <TouchableOpacity
-                onPress={() => {
-                  if (!findEmail) {
-                    appAlert('비밀번호 찾기', '이메일을 입력해주세요.');
-                    return;
+                onPress={async () => {
+                  try {
+                    if (!findEmail) { appAlert('비밀번호 찾기','이메일을 입력해주세요.'); return; }
+                    await sendPasswordReset(findEmail);
+                    appAlert('비밀번호 찾기','입력하신 이메일로 재설정 링크를 보냈습니다.');
+                  } catch(e:any) {
+                    appAlert('오류', e.message || String(e));
                   }
-                  appAlert('비밀번호 찾기', '입력하신 이메일로 안내를 보냈습니다.');
                 }}
                 activeOpacity={0.9}
                 style={{

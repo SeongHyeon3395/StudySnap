@@ -4,6 +4,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import { listLibrary, getSignedUrl } from '../logic/library';
 
 import {
   View,
@@ -331,72 +332,70 @@ function AdCarousel() {
   );
 }
 
-type LibraryItem = { id:string; name:string; type:'pdf'; pages:number; sizeKB:number; created:string; path:string };
-function LibraryScreen() {
-  const initial: LibraryItem[] = [
-    { id:'lib-sample-1', name:'샘플요약.pdf', type:'pdf', pages:1, sizeKB:3, created:'2025-09-03 11:00', path:'assets/sample.pdf' }
-  ];
-  const [items, setItems] = React.useState<LibraryItem[]>(initial);
+// Replaced LibraryScreen with real storage listing version
+function TopBarSimple({ title }: { title: string }) {
+  return (
+    <View style={{ backgroundColor: BG, borderBottomColor: BORDER, borderBottomWidth: 1 }}>
+      <View style={{ paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight ?? 0) : 0, backgroundColor: BG }}>
+        <View style={{ paddingHorizontal: 16, paddingVertical: 10, alignItems: 'center', justifyContent:'center' }}>
+          <Text style={{ fontSize: 19, fontWeight: '900', color: INK }}>{title}</Text>
+        </View>
+      </View>
+    </View>
+  );
+}
 
-  const onPressItem = (item:LibraryItem) => {
-    Alert.alert(
-      '파일 정보',
-      `${item.name}\n${item.pages}페이지 · ${item.sizeKB}KB`,
-      [
-        {
-          text:'삭제',
-          style:'destructive',
-          onPress:()=> setItems(prev=> prev.filter(it=>it.id!==item.id))
-        },
-        {
-          text:'다운로드',
-          onPress:()=> {
-            // TODO: 실제 파일 저장 (예: react-native-fs) 연동
-            Alert.alert('다운로드', '샘플 (구현 예정)');
-          }
-        },
-        { text:'닫기', style:'cancel' }
-      ],
-      { cancelable:true }
-    );
+function LibraryScreen() {
+  const [items, setItems] = React.useState<{ name:string; id?:string; updated_at?:string; created_at?:string; size?:number }[]>([]);
+  const [loading, setLoading] = React.useState(false);
+
+  const load = React.useCallback(async ()=>{
+    try {
+      setLoading(true);
+      const list = await listLibrary();
+      setItems(list);
+    } catch(e:any) {
+      Alert.alert('오류', e.message || String(e));
+    } finally { setLoading(false); }
+  }, []);
+
+  React.useEffect(()=>{ load(); }, [load]);
+
+  const onPressItem = async (name: string) => {
+    try {
+      const url = await getSignedUrl(name.includes('/') ? name : name);
+      Alert.alert('다운로드 링크', url);
+    } catch(e:any) {
+      Alert.alert('오류', e.message || String(e));
+    }
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: BG }}>
+    <SafeAreaView style={{ flex:1, backgroundColor:BG }}>
       <StatusBar barStyle="dark-content" backgroundColor={BG} />
-      <TopBar title="자료함" />
-      <ScrollView style={{ flex:1 }} contentContainerStyle={{ padding:18, paddingBottom:140 }} showsVerticalScrollIndicator={false}>
-        {items.length === 0 && (
+      <TopBarSimple title="자료함" />
+      <ScrollView style={{ flex:1 }} contentContainerStyle={{ padding:18, paddingBottom:140 }}>
+        {loading && <Text style={{ textAlign:'center', color:SUBTLE }}>불러오는 중...</Text>}
+        {!loading && items.length === 0 && (
           <View style={{ alignItems:'center', marginTop:40 }}>
             <MaterialIcons name="folder-open" size={40} color={ACCENT} />
             <Text style={{ marginTop:12, fontSize:16, fontWeight:'900', color:INK }}>파일이 없습니다</Text>
-            <Text style={{ marginTop:6, fontSize:12, color:SUBTLE }}>스냅/문서 저장 시 여기에 표시됩니다</Text>
+            <Text style={{ marginTop:6, fontSize:12, color:SUBTLE }}>스냅 정리에서 PDF 저장하면 여기에 나타납니다</Text>
           </View>
         )}
-        {items.map(item => (
-          <TouchableOpacity key={item.id} activeOpacity={0.85} onPress={()=>onPressItem(item)} style={{ backgroundColor:SURFACE, borderWidth:1, borderColor:BORDER, borderRadius:18, padding:16, marginBottom:14, ...SHADOW }}>
+        {items.map((it, idx)=>(
+          <TouchableOpacity key={idx} onPress={()=>onPressItem(it.name)} activeOpacity={0.85} style={{ backgroundColor:SURFACE, borderWidth:1, borderColor:BORDER, borderRadius:18, padding:16, marginBottom:14, ...SHADOW }}>
             <View style={{ flexDirection:'row', alignItems:'center' }}>
               <View style={{ width:46, height:46, borderRadius:12, backgroundColor:ACCENT_SOFT, alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:BORDER, marginRight:14 }}>
                 <MaterialIcons name="picture-as-pdf" size={24} color={ACCENT} />
               </View>
               <View style={{ flex:1 }}>
-                <Text style={{ fontSize:14.5, fontWeight:'900', color:INK }} numberOfLines={1}>{item.name}</Text>
-                <Text style={{ fontSize:11, color:SUBTLE, marginTop:4 }}>{item.pages}페이지 · {item.sizeKB}KB</Text>
-              </View>
-            </View>
-            <View style={{ flexDirection:'row', marginTop:12 }}>
-              <View style={{ flexDirection:'row', alignItems:'center', marginRight:14 }}>
-                <MaterialIcons name="event" size={14} color={SUBTLE} />
-                <Text style={{ marginLeft:4, fontSize:10, color:SUBTLE }}>{item.created}</Text>
-              </View>
-              <View style={{ flexDirection:'row', alignItems:'center' }}>
-                <MaterialIcons name="storage" size={14} color={SUBTLE} />
-                <Text style={{ marginLeft:4, fontSize:10, color:SUBTLE }}>{item.path}</Text>
+                <Text style={{ fontSize:14.5, fontWeight:'900', color:INK }} numberOfLines={1}>{it.name}</Text>
+                <Text style={{ fontSize:11, color:SUBTLE, marginTop:4 }}>{(it.size||0)/1024|0} KB</Text>
               </View>
             </View>
           </TouchableOpacity>
         ))}
-        <Text style={{ fontSize:11, color:SUBTLE, textAlign:'center', marginTop:30 }}>임시 예시 · 실제 저장/다운로드 로직 예정</Text>
       </ScrollView>
     </SafeAreaView>
   );

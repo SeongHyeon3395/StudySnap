@@ -8,7 +8,10 @@ import { useAppAlert } from '../components/AppAlertProvider';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { launchCamera, launchImageLibrary, Asset, type ImageLibraryOptions, type CameraOptions } from 'react-native-image-picker';
 import AsyncStorage from '../utils/safeAsyncStorage';
-
+import { askGemini } from '../logic/ai';
+import { fileToBase64FromUri } from '../lib/file';
+import { extractTextWithGemini } from '../logic/ai';
+import { generatePdfBytesFromText, uploadPdfToLibrary } from '../logic/library';
 // ===== THEME (Main과 동일 팔레트) =====
 const BG = '#F6F7FB';
 const SURFACE = '#FFFFFF';
@@ -202,10 +205,16 @@ export default function AskScreen({ navigation }: Props) {
     // 첨부 초기화
     setAttachedUri(null);
 
-    // ====== (TODO) Gemini API 호출 위치 ======
-    // 여기에서 userMsg.text / userMsg.imageUri 를 사용해 백엔드 → Gemini 호출
-    // 지금은 데모 응답을 typewriter 애니메이션으로 표시
-    const answer = buildDemoAnswer(text, !!userMsg.imageUri);
+    // ====== Gemini API 호출 ======
+    let answer = '';
+    try {
+      const base64 = userMsg.imageUri ? await fileToBase64FromUri(userMsg.imageUri) : undefined;
+      answer = await askGemini(text, base64);
+      if (!answer) answer = '응답이 비어 있습니다.';
+    } catch (e:any) {
+      console.warn('[AskScreen] Gemini error', e);
+      answer = '오류가 발생했어요: ' + (e.message || String(e));
+    }
 
     // 어시스턴트 메시지 빈껍데기 추가
     const aId = `a-${Date.now()}`;

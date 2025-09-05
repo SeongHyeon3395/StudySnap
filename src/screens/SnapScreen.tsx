@@ -2,12 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, SafeAreaView, StatusBar, Platform, TouchableOpacity, Animated, ScrollView, Image, ActivityIndicator, Modal, TextInput, Alert, Linking } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { launchCamera, Asset } from 'react-native-image-picker';
-
-// (AI 추출 기능 임시 비활성화) 추후 모델 연결 예정
-const extractTextFromImage = async (_base64: string) => {
-  await new Promise<void>(resolve=>setTimeout(()=>resolve(),700));
-  return '현재 이미지 텍스트 추출 기능은 비활성화 상태입니다. 추후 업데이트에서 제공될 예정입니다.';
-};
+import { extractTextWithGemini } from '../logic/ai';
+import { generatePdfBytesFromText, uploadPdfToLibrary } from '../logic/library';
+import { fileToBase64FromUri } from '../lib/file';
 
 // Theme tokens (동일 팔레트)
 const BG = '#F6F7FB';
@@ -127,48 +124,33 @@ export default function SnapScreen({ navigation }: any) {
     if (!file) return;
     setExtracting(true);
     setExtractedText(null);
-    
     try {
-      // 이미지를 Base64로 변환
-      const response = await fetch(file.uri);
-      const blob = await response.blob();
-      const reader = new FileReader();
-      
-      reader.onload = async () => {
-        try {
-          const base64 = (reader.result as string).split(',')[1];
-          const extractedText = await extractTextFromImage(base64);
-          setExtractedText(extractedText);
-        } catch (error: any) {
-          showAlert('추출 실패', error.message || '텍스트를 추출하는 데 실패했어요.');
-        } finally {
-          setExtracting(false);
-        }
-      };
-      
-      reader.onerror = () => {
-        showAlert('이미지 오류', '이미지를 처리하는 중 문제가 발생했어요.');
-        setExtracting(false);
-      };
-      
-      reader.readAsDataURL(blob);
-    } catch (error: any) {
-      showAlert('로딩 오류', '이미지를 불러오는 중 문제가 발생했어요.');
+      const base64 = await fileToBase64FromUri(file.uri);
+      const text = await extractTextWithGemini(base64);
+      setExtractedText(text || '(인식된 텍스트 없음)');
+    } catch (e:any) {
+      showAlert('추출 실패', e.message || '텍스트 추출 중 오류');
+    } finally {
       setExtracting(false);
     }
   };
 
   const openNaming = () => setNamingVisible(true);
   const cancelNaming = () => setNamingVisible(false);
-  const confirmConvert = () => {
-    setNamingVisible(false);
-    setConverting(true);
-    setTimeout(() => {
+  const confirmConvert = async () => {
+    try {
+      if (!extractedText) { showAlert('안내','먼저 텍스트를 추출해주세요.'); return; }
+      setNamingVisible(false);
+      setConverting(true);
+      const bytes = await generatePdfBytesFromText(extractedText);
+      const path = await uploadPdfToLibrary(pdfName, bytes);
       setConverting(false);
-      // 자료함 이동 placeholder
-  showAlert('PDF 저장 완료', '자료함에 저장되었다고 가정합니다.\n파일명: ' + pdfName + '.pdf');
+      showAlert('PDF 저장 완료', `자료함에 저장되었습니다.\n${path}`);
       reset();
-    }, 1800);
+    } catch (e:any) {
+      setConverting(false);
+      showAlert('저장 실패', e.message || String(e));
+    }
   };
 
   const progressBar = (
