@@ -1,69 +1,88 @@
-// Deno (Supabase Edge Functions)
-// Supabase "Send SMS Hook" 이벤트를 받아 국내 SMS API(예: SOLAPI)로 OTP 전송
+// supabase/functions/sms-hook-solapi/index.ts (최종 수정본)
 
-import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
-const SOLAPI_API_KEY = Deno.env.get("SOLAPI_API_KEY")!;
-const SOLAPI_API_SECRET = Deno.env.get("SOLAPI_API_SECRET")!;
-// SOLAPI 전송 엔드포인트(예시) — 실제 값/헤더명은 업체 문서에 맞춰 조정하세요.
+// 1. 환경 변수에서 솔라피 키와 발신번호를 미리 가져옵니다.
+const SOLAPI_API_KEY = Deno.env.get("SOLAPI_API_KEY");
+const SOLAPI_API_SECRET = Deno.env.get("SOLAPI_API_SECRET");
+const SOLAPI_SENDER_NUMBER = Deno.env.get("SOLAPI_SENDER_NUMBER");
 const SOLAPI_SEND_URL = "https://api.solapi.com/messages/v4/send";
 
-function ok(data: unknown, status = 200) {
+// 2. 응답을 위한 Helper 함수
+function createResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: {
-      "content-type": "application/json",
-      "access-control-allow-origin": "*",
-    },
+    headers: { "Content-Type": "application/json" },
   });
 }
 
+// 3. 솔라피 API 호출을 위한 시그니처 생성 함수 (✅ 가장 중요한 부분)
+async function createSignature() {
+  const salt = crypto.randomUUID();
+  const date = new Date().toISOString();
+  const signature = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(SOLAPI_API_SECRET!),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  ).then(key => crypto.subtle.sign("HMAC", key, new TextEncoder().encode(date + salt)))
+   .then(res => Array.from(new Uint8Array(res)).map(b => b.toString(16).padStart(2, '0')).join(''));
+
+  return `HMAC-SHA256 salt=${salt}, date=${date}, signature=${signature}`;
+}
+
 serve(async (req) => {
-  if (req.method === "OPTIONS") return ok({});
+  // CORS Preflight 요청 처리
+  if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: { 'Access-Control-Allow-Origin': '*' } });
+  }
+
   try {
-    // Supabase Send SMS Hook 이벤트 바디
-    // 문서상 user, sms.otp 등이 포함됨:contentReference[oaicite:2]{index=2}.
-    const event = await req.json();
+    // 4. Supabase가 보내주는 Hook 데이터를 받습니다.
+    const hookEvent = await req.json();
+    const phone = hookEvent?.user?.phone;
+    const otp = hookEvent?.sms?.otp;
 
-    // 1) 받는 번호/OTP 추출
-    const userPhone: string | undefined = event?.user?.phone;     // 국제 형식 권장 (+8210...)
-    const otp: string | undefined = event?.sms?.otp;              // 발송할 6자리 OTP
-
-    if (!userPhone || !otp) {
-      return ok({ error: "missing phone or otp" }, 400);
+    if (!phone || !otp) {
+      console.error("Hook Error: phone or otp missing", hookEvent);
+      return createResponse({ error: "Missing phone or otp from hook" }, 400);
     }
-
-    // 2) 국내 SMS 업체 API 호출 (여기서는 SOLAPI 예시)
-    // 실제 인증방식(헤더/서명)은 업체 문서에 맞게 바꿔주세요.
-    // 예: 솔라피는 키/시크릿 기반 헤더 또는 JWT/HMAC 등 방식을 사용.
-    const msg = `[StudySnap] 인증번호: ${otp}`;
+    
+    // 5. 솔라피에 보낼 메시지 본문을 만듭니다.
     const payload = {
-      // 업체 요구 필드에 맞게 수정
-      to: userPhone,
-      from: Deno.env.get("SMS_FROM") ?? "",  // 발신번호(국내 등록/사전 인증 필요)
-      text: msg,
+      message: {
+        to: phone,
+        from: SOLAPI_SENDER_NUMBER,
+        text: `[찍공] 인증번호는 [${otp}] 입니다.`,
+      },
     };
-
-    const r = await fetch(SOLAPI_SEND_URL, {
-      method: "POST",
+    
+    // 6. 올바른 인증 헤더를 생성하여 API를 호출합니다.
+    const signatureHeader = await createSignature();
+    const response = await fetch(SOLAPI_SEND_URL, {
+      method: 'POST',
       headers: {
-        "content-type": "application/json",
-        "Authorization": `HMAC-SHA256 ${SOLAPI_API_KEY}:${SOLAPI_API_SECRET}`, // 예시, 실제는 문서대로
+        'Authorization': signatureHeader,
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
     });
 
-    const j = await r.json().catch(() => ({}));
+    const responseData = await response.json();
 
-    if (!r.ok) {
-      console.error("SOLAPI error", r.status, j);
-      return ok({ error: "provider send failed", detail: j }, 502);
+    if (!response.ok || responseData.statusCode !== '2000') {
+      console.error("Solapi Send Error:", responseData);
+      throw new Error(`Failed to send SMS via Solapi: ${responseData.statusMessage || 'Unknown error'}`);
     }
 
-    // 3) Hook 응답: 200 이면 Supabase가 "전송 성공"으로 간주
-    return ok({ ok: true, provider: "solapi", result: j }, 200);
-  } catch (e) {
-    console.error(e);
-    return ok({ error: String(e) }, 500);
+    console.log(`SMS successfully sent to ${phone} via Solapi.`);
+
+    // 7. Supabase에 성공적으로 처리되었음을 알립니다.
+    return createResponse({ success: true });
+
+  } catch (error) {
+    console.error("Function Error:", error.message);
+    return createResponse({ error: error.message }, 500);
   }
 });
