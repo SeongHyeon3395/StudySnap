@@ -1,5 +1,3 @@
-// supabase/functions/sms-hook-solapi/index.ts (Secret 검증 포함 최종본)
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 // 1. 환경 변수에서 모든 비밀 정보를 가져옵니다.

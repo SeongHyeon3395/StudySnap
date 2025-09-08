@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -44,6 +44,8 @@ export default function LoginScreen({ navigation }: Props) {
   const [suPassword2, setSuPassword2] = useState('');
   const [codeSent, setCodeSent] = useState(false);
   const [otp, setOtp] = useState('');
+  const [codeSentAt, setCodeSentAt] = useState<number | null>(null); // 재전송 쿨다운 체크용
+  const otpExpireTimerRef = useRef<any>(null); // 3분 만료 타이머
 
   // 계정/비번 찾기
   const [findEmail, setFindEmail] = useState('');
@@ -51,6 +53,8 @@ export default function LoginScreen({ navigation }: Props) {
   // 계정 찾기 전용 인증 상태
   const [findCodeSent, setFindCodeSent] = useState(false);
   const [findOtp, setFindOtp] = useState('');
+  const [findCodeSentAt, setFindCodeSentAt] = useState<number | null>(null);
+  const findOtpExpireTimerRef = useRef<any>(null);
   // 전화번호 인증 완료 여부
   const [phoneVerified, setPhoneVerified] = useState(false);
 
@@ -159,12 +163,27 @@ export default function LoginScreen({ navigation }: Props) {
   // 2) 회원가입 - 전화번호 인증코드 전송 (Supabase OTP)
   const onSendCode = async () => {
     if (!suPhone) { appAlert('인증','휴대폰 번호를 입력하세요.'); return; }
+    // 1분 재전송 쿨다운
+    if (codeSentAt && Date.now() - codeSentAt < 60_000) {
+      appAlert('재발송 제한','재발송은 1분 뒤에 가능해요.');
+      return;
+    }
     try {
       const phone = toE164KR(suPhone);
       const { error } = await supabase.auth.signInWithOtp({ phone, options:{ channel:'sms' }});
       if (error) throw error;
       setCodeSent(true);
-      appAlert('인증', '입력하신 번호로 인증코드를 보냈습니다.');    } catch(e:any) {
+      setCodeSentAt(Date.now());
+      setOtp('');
+      // 기존 만료 타이머 초기화 후 3분 타이머 시작
+      if (otpExpireTimerRef.current) clearTimeout(otpExpireTimerRef.current);
+      otpExpireTimerRef.current = setTimeout(() => {
+        setCodeSent(false);
+        setOtp('');
+        appAlert('인증 만료','3분이 지나 인증번호가 만료되었어요. 다시 전송해주세요.');
+      }, 180_000);
+      appAlert('인증', '입력하신 번호로 인증코드를 보냈습니다.');
+    } catch(e:any) {
       appAlert('전송 실패', e.message || String(e));
     }
   };
@@ -217,8 +236,21 @@ export default function LoginScreen({ navigation }: Props) {
   const onSendFindCode = async () => {
     try {
       if (!findPhone) { appAlert('인증','전화번호를 입력하세요.'); return; }
+      // 1분 재전송 제한
+      if (findCodeSentAt && Date.now() - findCodeSentAt < 60_000) {
+        appAlert('재발송 제한','재발송은 1분 뒤에 가능해요.');
+        return;
+      }
       await sendPhoneCode(findPhone);
       setFindCodeSent(true);
+      setFindCodeSentAt(Date.now());
+      setFindOtp('');
+      if (findOtpExpireTimerRef.current) clearTimeout(findOtpExpireTimerRef.current);
+      findOtpExpireTimerRef.current = setTimeout(() => {
+        setFindCodeSent(false);
+        setFindOtp('');
+        appAlert('인증 만료','3분이 지나 인증번호가 만료되었어요. 다시 전송해주세요.');
+      }, 180_000);
       appAlert('인증','인증코드를 전송했습니다. 6자리 코드를 입력하세요.');
     } catch (e:any) {
       appAlert('인증 오류', e.message || String(e));
@@ -864,7 +896,7 @@ export default function LoginScreen({ navigation }: Props) {
                     }}
                   >
                     <MaterialIcons name="sms" size={18} color={'#1A1A1A'} />
-                    <Text style={{ color: '#1A1A1A', fontWeight: '900', marginLeft: 6 }}>인증코드 전송</Text>
+                    <Text style={{ color: '#1A1A1A', fontWeight: '900', marginLeft: 6 }}>{codeSent ? '재전송' : '인증코드 전송'}</Text>
                   </TouchableOpacity>
                 </View>
               </View>
