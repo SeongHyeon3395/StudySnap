@@ -1,4 +1,5 @@
 import React from 'react';
+import { supabase } from '../lib/supabase';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
@@ -130,6 +131,20 @@ function HomeScreen({ navigation }: any) {
     { key:'ai', label:'AI 문제생성', desc:'자동 생성', long:'AI가 학습 문제를 만들어줘요.', icon:<MaterialCommunityIcons name="robot-outline" size={24} color={ACCENT} />, type:'ai' },
   ];
   const visibleGoals = goals.slice(0,3);
+  // 프로필 이름/이메일 로드
+  const [profileName, setProfileName] = React.useState<string>('');
+  const [profileEmail, setProfileEmail] = React.useState<string>('');
+  const loadProfileName = React.useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const uid = user?.id;
+      if (!uid) { setProfileName(''); setProfileEmail(''); return; }
+      const { data, error } = await supabase.from('profiles').select('name').eq('id', uid).maybeSingle();
+      if (!error) setProfileName(data?.name || '');
+      setProfileEmail(user?.email || '');
+    } catch {/* ignore */}
+  }, []);
+  React.useEffect(() => { loadProfileName(); }, [loadProfileName]);
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: BG }}>
@@ -146,7 +161,7 @@ function HomeScreen({ navigation }: any) {
             <View style={{ paddingHorizontal:10, paddingVertical:5, backgroundColor:'#FFE8CC', borderRadius:12, marginRight:8, borderWidth:1, borderColor:BORDER }}>
               <Text style={{ fontSize:10, fontWeight:'800', color: ACCENT, letterSpacing:0.5 }}>PREMIUM</Text>
             </View>
-            <Text style={{ fontSize:13, fontWeight:'800', color: INK }}>사용자</Text>
+            <Text style={{ fontSize:13, fontWeight:'800', color: INK }}>{profileName || '사용자'}</Text>
           </View>
         </View>
       </View>
@@ -706,6 +721,21 @@ function SettingsScreen() {
   type SettingsSection = 'account'|'subscription'|'notifications'|'privacy'|'about';
   const [section, setSection] = React.useState<SettingsSection|null>(null);
   const [renderingSection, setRenderingSection] = React.useState<SettingsSection|null>(null); // 애니메이션 표시용
+
+  // 프로필 이름/이메일 (계정 섹션 표시용)
+  const [profileName, setProfileName] = React.useState<string>('');
+  const [profileEmail, setProfileEmail] = React.useState<string>('');
+  const loadProfileBasic = React.useCallback(async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const uid = user?.id;
+      if (!uid) { setProfileName(''); setProfileEmail(''); return; }
+      const { data, error } = await supabase.from('profiles').select('name').eq('id', uid).maybeSingle();
+      if (!error) setProfileName(data?.name || '');
+      setProfileEmail(user?.email || '');
+    } catch {/* ignore */}
+  }, []);
+  useFocusEffect(React.useCallback(()=>{ loadProfileBasic(); }, [loadProfileBasic]));
   const showToast = (msg: string) => {
     setToast(msg);
     Animated.timing(toastOpacity, { toValue: 1, duration: 150, useNativeDriver: true }).start(() => {
@@ -752,15 +782,15 @@ function SettingsScreen() {
     }, [sectionAnim])
   );
 
-  // 섹션별 렌더
-  const renderSection = () => {
+  // 섹션별 렌더 (profileName 사용)
+  const renderSection = (pName: string, pEmail: string) => {
     if (!renderingSection) return null;
     if (renderingSection === 'account') return (
       <Card>
         <View style={{ flexDirection:'row', alignItems:'center', marginBottom:16 }}>
           <View style={{ flex:1 }}>
-            <Text style={{ color: INK, fontSize:14, fontWeight:'800' }}>사용자</Text>
-            <Text style={{ color: SUBTLE, fontSize:12, marginTop:4 }}>example@domain.com</Text>
+            <Text style={{ color: INK, fontSize:14, fontWeight:'800' }}>{pName || '사용자'}</Text>
+            <Text style={{ color: SUBTLE, fontSize:12, marginTop:4 }}>{pEmail || '—'}</Text>
           </View>
           <TouchableOpacity onPress={()=>showToast('프로필 편집 준비중')} style={{ paddingHorizontal:14, paddingVertical:8, borderRadius:10, backgroundColor:ACCENT_SOFT, borderWidth:1, borderColor:BORDER }}>
             <Text style={{ fontSize:12, fontWeight:'700', color:ACCENT }}>편집</Text>
@@ -957,7 +987,7 @@ function SettingsScreen() {
       pointerEvents={renderingSection ? 'auto':'none'}
           >
             <ScrollView style={{ flex:1 }} contentContainerStyle={{ padding:20, paddingBottom:140 }} showsVerticalScrollIndicator={false}>
-              {renderSection()}
+              {renderSection(profileName, profileEmail)}
               <View style={{ marginTop:40, alignItems:'center' }}>
                 <Text style={{ fontSize:11, color:SUBTLE, fontWeight:'600' }}>버전 1.0.0</Text>
               </View>

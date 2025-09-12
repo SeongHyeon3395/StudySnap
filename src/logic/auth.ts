@@ -1,19 +1,51 @@
 import { supabase } from '../lib/supabase';
 
 const onlyDigits = (s:string) => s.replace(/\D/g,'');
+const toE164KR = (raw: string) => {
+  const d = onlyDigits(raw);
+  if (!d) return '';
+  if (d.startsWith('0')) return '+82' + d.slice(1);
+  if (d.startsWith('82')) return '+' + d;
+  return '+' + d;
+};
 
-export async function sendPhoneCode(phoneFormatted: string) {
-  const phone = onlyDigits(phoneFormatted);
-  const { error } = await supabase.auth.signInWithOtp({ phone, options:{ channel:'sms' }});
+// ===== Basic Auth helpers =====
+export async function signUp(email: string, password: string, name?: string, birth?: string, phone?: string) {
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { data: { name, birth, phone } },
+  });
+  if (error) throw error;
+  return data.user;
+}
+
+export async function signIn(email: string, password: string) {
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+  return data.session;
+}
+
+export async function signOut() {
+  const { error } = await supabase.auth.signOut();
   if (error) throw error;
 }
 
-export async function verifyPhoneCode(phoneFormatted: string, code: string) {
+export async function sendPhoneCode(phoneFormatted: string) {
+  // Edge Function으로 위임 (숫자만 전송)
   const phone = onlyDigits(phoneFormatted);
-  const { data, error } = await supabase.auth.verifyOtp({ type:'sms', phone, token: code });
+  const { data, error } = await supabase.functions.invoke('otp-send', { body: { phone } });
   if (error) throw error;
-  // data.session이 생깁니다(해당 번호 계정으로 로그인된 상태)
-  return data.session;
+  if (!(data as any)?.ok) throw new Error((data as any)?.reason || 'SEND_FAILED');
+}
+
+export async function verifyPhoneCode(phoneFormatted: string, code: string) {
+  // Edge Function으로 검증 (세션 생성 없이 검증만)
+  const phone = onlyDigits(phoneFormatted);
+  const { data, error } = await supabase.functions.invoke('otp-verify', { body: { phone, code } });
+  if (error) throw error;
+  if (!(data as any)?.ok) throw new Error((data as any)?.reason || 'VERIFY_FAILED');
+  return true;
 }
 
 export async function signUpWithEmailAndProfile(params: {
@@ -39,15 +71,11 @@ export async function signInWithEmail(email: string, password: string) {
 }
 
 export async function findAccountByPhoneOtp(phoneFormatted: string, code: string) {
-  // 코드 검증하면 해당 사용자로 로그인됨 → 이메일 확인 후 바로 로그아웃
-  const session = await verifyPhoneCode(phoneFormatted, code);
-  const email = session?.user?.email || '';
-  await supabase.auth.signOut();
-  if (!email) throw new Error('이 번호로 가입된 이메일이 없습니다.');
-  // 마스킹
-  const [id, dom] = email.split('@');
-  const masked = (id?.slice(0,2) || '') + '***@' + dom;
-  return masked;
+  const phone = onlyDigits(phoneFormatted);
+  const { data, error } = await supabase.functions.invoke('find-email-by-phone', { body: { phone, code } });
+  if (error) throw error;
+  if (!(data as any)?.ok) throw new Error((data as any)?.reason || 'LOOKUP_FAILED');
+  return (data as any).emailMasked as string;
 }
 
 export async function sendPasswordReset(email: string) {

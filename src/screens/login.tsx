@@ -44,8 +44,9 @@ export default function LoginScreen({ navigation }: Props) {
   const [suPassword2, setSuPassword2] = useState('');
   const [codeSent, setCodeSent] = useState(false);
   const [otp, setOtp] = useState('');
-  const [codeSentAt, setCodeSentAt] = useState<number | null>(null); // 재전송 쿨다운 체크용
-  const otpExpireTimerRef = useRef<any>(null); // 3분 만료 타이머
+  const [codeSentAt, setCodeSentAt] = useState<number | null>(null); // 1분 재전송 쿨다운 체크용
+  const [otpExpiresAt, setOtpExpiresAt] = useState<number | null>(null); // 3분 만료 시각 (ms)
+  const [otpRemaining, setOtpRemaining] = useState<number>(0); // 남은 초
 
   // 계정/비번 찾기
   const [findEmail, setFindEmail] = useState('');
@@ -111,6 +112,24 @@ export default function LoginScreen({ navigation }: Props) {
     });
   };
 
+  // OTP 남은 시간 카운트다운 (회원가입)
+  useEffect(() => {
+    if (!otpExpiresAt) { setOtpRemaining(0); return; }
+    const tick = () => {
+      const left = Math.max(0, Math.floor((otpExpiresAt - Date.now()) / 1000));
+      setOtpRemaining(left);
+      if (left <= 0) {
+        // 만료: UI 초기화 (alert 없이)
+        setCodeSent(false);
+        setOtp('');
+        setOtpExpiresAt(null);
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [otpExpiresAt]);
+
   // 1) 로그인
   const onLoginPress = async () => {
     try {
@@ -160,43 +179,43 @@ export default function LoginScreen({ navigation }: Props) {
       <Text style={{ fontSize: 11, marginLeft: 4, color: ok ? SUBTLE : '#EF4444' }}>{label}</Text>
     </View>
   );
-  // 2) 회원가입 - 전화번호 인증코드 전송 (Supabase OTP)
+  // 2) 회원가입 - 전화번호 인증코드 전송 (Edge Function: otp-send)
   const onSendCode = async () => {
     if (!suPhone) { appAlert('인증','휴대폰 번호를 입력하세요.'); return; }
     // 1분 재전송 쿨다운
     if (codeSentAt && Date.now() - codeSentAt < 60_000) {
-      appAlert('재발송 제한','재발송은 1분 뒤에 가능해요.');
+      appAlert('재발송 제한','1분뒤 시도해 주세요');
       return;
     }
     try {
-      const phone = toE164KR(suPhone);
-      const { error } = await supabase.auth.signInWithOtp({ phone, options:{ channel:'sms' }});
+      const toDigits = (s:string)=> s.replace(/\D/g,'');
+      const { data, error } = await supabase.functions.invoke('otp-send', { body: { phone: toDigits(suPhone) } });
       if (error) throw error;
+      if ((data as any)?.ok === false) throw new Error((data as any)?.reason || 'SEND_FAILED');
       setCodeSent(true);
       setCodeSentAt(Date.now());
       setOtp('');
-      // 기존 만료 타이머 초기화 후 3분 타이머 시작
-      if (otpExpireTimerRef.current) clearTimeout(otpExpireTimerRef.current);
-      otpExpireTimerRef.current = setTimeout(() => {
-        setCodeSent(false);
-        setOtp('');
-        appAlert('인증 만료','3분이 지나 인증번호가 만료되었어요. 다시 전송해주세요.');
-      }, 180_000);
-      appAlert('인증', '입력하신 번호로 인증코드를 보냈습니다.');
+      const expires = Date.now() + 180_000; // 3분
+      setOtpExpiresAt(expires);
+      appAlert('인증','인증번호를 보냈습니다.');
     } catch(e:any) {
       appAlert('전송 실패', e.message || String(e));
     }
   };
-  // 전화번호 OTP 검증 후 즉시 메인 이동 (테스트 간소화)
+  // 전화번호 OTP 검증 (Edge Function: otp-verify)
   const onVerifyPhoneOtp = async () => {
     if (!suPhone || otp.length !== 6) { appAlert('인증','전화번호와 6자리 코드를 확인하세요.'); return; }
     try {
-      const phone = toE164KR(suPhone);
-      const { data, error } = await supabase.auth.verifyOtp({ phone, token: otp, type: 'sms' });
+      const toDigits = (s:string)=> s.replace(/\D/g,'');
+      const { data, error } = await supabase.functions.invoke('otp-verify', {
+        body: { phone: toDigits(suPhone), code: otp }
+      });
       if (error) throw error;
-      navigation?.replace?.('Main');
+      if (!(data as any)?.ok) throw new Error(((data as any)?.reason) || 'VERIFY_FAILED');
+      setPhoneVerified(true);
+      appAlert('인증','성공적으로 인증되었습니다!');
     } catch(e:any) {
-      appAlert('인증 실패', e.message || String(e));
+      appAlert('실패', e.message || String(e));
     }
   };
 
@@ -217,13 +236,48 @@ export default function LoginScreen({ navigation }: Props) {
   if (!pwMixOk) { appAlert('비밀번호 조합','영문자와 숫자를 모두 포함해야 합니다.'); return; }
   if (!pwSpecialOk) { appAlert('비밀번호 특수문자','특수문자 1개 이상 포함해야 합니다.'); return; }
   if (pwConfirmMismatch) { appAlert('비밀번호 확인','비밀번호가 일치하지 않습니다.'); return; }
+      // DB 중복(있으면 알림 후 중단)
+      const duplicated = await (async () => {
+        try {
+          // profiles 테이블이 존재한다면 이메일/전화 중복 확인 (없으면 에러 → 무시)
+          const emailCheck = await supabase
+            .from('profiles')
+            .select('id', { count: 'exact', head: true })
+            .eq('email', suEmail);
+          if (emailCheck.count && emailCheck.count > 0) {
+            appAlert('중복 계정', '이미 가입되어있는 이메일 입니다.');
+            return true;
+          }
+          const phoneNorm = toE164KR(suPhone);
+          const phoneCheck = await supabase
+            .from('profiles')
+            .select('id', { count: 'exact', head: true })
+            .or(`phone.eq.${suPhone},phone.eq.${phoneNorm}` as any);
+          if (phoneCheck.count && phoneCheck.count > 0) {
+            appAlert('중복 계정', '이미 가입되어있는 전화번호 입니다.');
+            return true;
+          }
+        } catch {}
+        return false;
+      })();
+      if (duplicated) return;
+
       if (codeSent) {
         if (otp.length !== 6) { appAlert('회원가입','전화번호 인증코드를 입력하세요.'); return; }
         await verifyPhoneCode(suPhone, otp);
         setPhoneVerified(true);
       }
-      await signUpWithEmailAndProfile({ name: suName, email: suEmail, birth: suBirth, phone: suPhone, password: suPassword });
-      appAlert('회원가입','가입이 완료되었습니다. 메일함에서 인증(선택) 후 로그인해주세요.', [
+      try {
+        await signUpWithEmailAndProfile({ name: suName, email: suEmail, birth: suBirth, phone: suPhone, password: suPassword });
+      } catch (err:any) {
+        const msg = (err?.message || '').toString().toLowerCase();
+        if (msg.includes('already') || msg.includes('exists')) {
+          appAlert('중복 계정', '이미 가입되어있는 이메일 입니다.');
+          return;
+        }
+        throw err;
+      }
+      appAlert('회원가입','가입이 완료되었습니다.', [
         { text:'확인', onPress:()=> setShowSignUp(false) }
       ]);
     } catch (e:any) {
@@ -924,6 +978,11 @@ export default function LoginScreen({ navigation }: Props) {
                       textAlign: 'center',
                     }}
                   />
+                  {!!otpExpiresAt && otpRemaining > 0 && (
+                    <Text style={{ marginTop: 6, fontSize: 11, color: SUBTLE, textAlign:'right' }}>
+                      남은 시간 {Math.floor(otpRemaining/60).toString().padStart(2,'0')}:{(otpRemaining%60).toString().padStart(2,'0')}
+                    </Text>
+                  )}
                 </View>
               )}
 
