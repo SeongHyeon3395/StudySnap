@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, SafeAreaView, StatusBar, Platform, TouchableOpacity, Animated, ScrollView, Image, ActivityIndicator, Modal, TextInput, Alert, Linking } from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { launchCamera, Asset } from 'react-native-image-picker';
+import { launchCamera, launchImageLibrary, Asset } from 'react-native-image-picker';
+import { check, request, PERMISSIONS, RESULTS, openSettings } from 'react-native-permissions';
 import { extractTextWithGemini } from '../logic/ai';
 import { generatePdfBytesFromText, uploadPdfToLibrary } from '../logic/library';
 import { fileToBase64FromUri } from '../lib/file';
@@ -51,9 +52,18 @@ export default function SnapScreen({ navigation }: any) {
     }
   }, [extracting, scanAnim]);
 
-  // 파일 업로드 기능 제거(모듈 삭제) - placeholder
-  const pickFile = () => {
-    showAlert('기능 준비 중', '현재 버전에서는 파일 업로드 기능이 비활성화되어 있습니다.\n추후 업데이트에서 제공될 예정입니다.');
+  // 갤러리에서 이미지 선택 (PDF 지원 제거 - 호환성 문제로 DocumentPicker 삭제)
+  const pickFile = async () => {
+    try {
+      const result = await launchImageLibrary({ mediaType: 'photo', selectionLimit: 1, quality: 0.9, includeBase64: false });
+      if (result.didCancel) return;
+      const asset = result.assets?.[0];
+      if (!asset?.uri) { showAlert('선택 오류','이미지를 불러오지 못했습니다.'); return; }
+      setFile({ type:'image', name: asset.fileName || 'gallery.jpg', uri: asset.uri, size: asset.fileSize });
+      setExtractedText(null);
+    } catch(e:any) {
+      showAlert('선택 오류', e.message || '갤러리 접근 중 문제 발생');
+    }
   };
 
   // 커스텀 알림 (앱 스타일 모달)
@@ -62,8 +72,41 @@ export default function SnapScreen({ navigation }: any) {
   };
   const closeAlert = () => setAppAlert(a => ({ ...a, visible:false }));
 
-  // react-native-image-picker 가 자체적으로 카메라 권한 요청을 트리거 (Android)
-  const checkCameraPermission = async () => true;
+  // 카메라 권한 확인/요청
+  const checkCameraPermission = async () => {
+    if (Platform.OS === 'android') {
+      const res = await check(PERMISSIONS.ANDROID.CAMERA);
+      if (res === RESULTS.GRANTED) return true;
+      if (res === RESULTS.DENIED) {
+        const r = await request(PERMISSIONS.ANDROID.CAMERA);
+        return r === RESULTS.GRANTED;
+      }
+      if (res === RESULTS.BLOCKED) {
+        showAlert('권한 필요','설정에서 카메라 권한을 허용해주세요.', [
+          { text:'닫기', style:'cancel' },
+          { text:'설정 열기', onPress:()=>openSettings() }
+        ]);
+        return false;
+      }
+      return false;
+    } else if (Platform.OS === 'ios') {
+      const res = await check(PERMISSIONS.IOS.CAMERA);
+      if (res === RESULTS.GRANTED) return true;
+      if (res === RESULTS.DENIED) {
+        const r = await request(PERMISSIONS.IOS.CAMERA);
+        return r === RESULTS.GRANTED;
+      }
+      if (res === RESULTS.BLOCKED) {
+        showAlert('권한 필요','설정에서 카메라 권한을 허용해주세요.', [
+          { text:'닫기', style:'cancel' },
+          { text:'설정 열기', onPress:()=>openSettings() }
+        ]);
+        return false;
+      }
+      return false;
+    }
+    return true;
+  };
 
   const takePhoto = async () => {
     try {
@@ -121,7 +164,7 @@ export default function SnapScreen({ navigation }: any) {
   };
 
   const startExtract = async () => {
-    if (!file) return;
+    if (!file || file.type !== 'image') return;
     setExtracting(true);
     setExtractedText(null);
     try {
@@ -139,10 +182,17 @@ export default function SnapScreen({ navigation }: any) {
   const cancelNaming = () => setNamingVisible(false);
   const confirmConvert = async () => {
     try {
-      if (!extractedText) { showAlert('안내','먼저 텍스트를 추출해주세요.'); return; }
       setNamingVisible(false);
       setConverting(true);
-      const bytes = await generatePdfBytesFromText(extractedText);
+      let bytes: Uint8Array;
+      if (file?.type === 'pdf') {
+        const res = await fetch(file.uri);
+        const buf = await res.arrayBuffer();
+        bytes = new Uint8Array(buf);
+      } else {
+        if (!extractedText) { showAlert('안내','먼저 텍스트를 추출해주세요.'); setConverting(false); return; }
+        bytes = await generatePdfBytesFromText(extractedText);
+      }
       const path = await uploadPdfToLibrary(pdfName, bytes);
       setConverting(false);
       showAlert('PDF 저장 완료', `자료함에 저장되었습니다.\n${path}`);
@@ -205,15 +255,15 @@ export default function SnapScreen({ navigation }: any) {
                 <MaterialIcons name="chevron-right" size={24} color={SUBTLE} />
               </TouchableOpacity>
               
-              <TouchableOpacity onPress={pickFile} style={{ width:'100%', backgroundColor:'#F3F4F6', borderWidth:1, borderColor:BORDER, borderRadius:18, padding:20, flexDirection:'row', alignItems:'center', opacity:0.7 }}>
-                <View style={{ width:48, height:48, borderRadius:14, backgroundColor:'#E5E7EB', alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:BORDER }}>
-                  <MaterialIcons name="block" size={26} color={SUBTLE} />
+        <TouchableOpacity onPress={pickFile} style={{ width:'100%', backgroundColor:SURFACE, borderWidth:1, borderColor:BORDER, borderRadius:18, padding:20, flexDirection:'row', alignItems:'center', ...SHADOW }}>
+                <View style={{ width:48, height:48, borderRadius:14, backgroundColor:ACCENT_SOFT, alignItems:'center', justifyContent:'center', borderWidth:1, borderColor:BORDER }}>
+                  <MaterialIcons name="upload-file" size={26} color={ACCENT} />
                 </View>
                 <View style={{ marginLeft:16, flex:1 }}>
-                  <Text style={{ fontSize:16, fontWeight:'800', color:SUBTLE }}>파일 업로드 (비활성화)</Text>
-                  <Text style={{ fontSize:12, color:SUBTLE, marginTop:4, lineHeight:16 }}>추후 업데이트 예정</Text>
+          <Text style={{ fontSize:16, fontWeight:'800', color:INK }}>이미지 선택</Text>
+          <Text style={{ fontSize:12, color:SUBTLE, marginTop:4, lineHeight:16 }}>갤러리에서 불러오기</Text>
                 </View>
-                <MaterialIcons name="info" size={20} color={SUBTLE} />
+                <MaterialIcons name="chevron-right" size={24} color={SUBTLE} />
               </TouchableOpacity>
             </View>
           </View>
@@ -228,16 +278,22 @@ export default function SnapScreen({ navigation }: any) {
               ) : (
                 <View style={{ height:260, borderRadius:12, backgroundColor:'#FAFAFC', borderWidth:1, borderColor:BORDER, alignItems:'center', justifyContent:'center' }}>
                   <MaterialIcons name="picture-as-pdf" size={60} color={ACCENT} />
-                  <Text style={{ fontSize:12, marginTop:8, color:SUBTLE }}>{file.pages} 페이지</Text>
+                  <Text style={{ fontSize:12, marginTop:8, color:SUBTLE }}>{file.pages ? `${file.pages} 페이지` : 'PDF 파일'}</Text>
                 </View>
               )}
               <View style={{ flexDirection:'row', marginTop:14 }}>
                 <TouchableOpacity onPress={()=>setFile(null)} style={{ flex:1, paddingVertical:12, borderRadius:12, backgroundColor:ACCENT_SOFT, borderWidth:1, borderColor:BORDER, alignItems:'center', marginRight:8 }}>
                   <Text style={{ color:ACCENT, fontWeight:'800' }}>다시 선택</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={startExtract} style={{ flex:1, paddingVertical:12, borderRadius:12, backgroundColor:ACCENT, alignItems:'center' }}>
-                  <Text style={{ color:'#fff', fontWeight:'800' }}>텍스트 추출</Text>
-                </TouchableOpacity>
+                {file.type === 'image' ? (
+                  <TouchableOpacity onPress={startExtract} style={{ flex:1, paddingVertical:12, borderRadius:12, backgroundColor:ACCENT, alignItems:'center' }}>
+                    <Text style={{ color:'#fff', fontWeight:'800' }}>텍스트 추출</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity onPress={()=>{ setExtractedText('(PDF 업로드 완료 - 변환 없이 저장 준비)'); }} style={{ flex:1, paddingVertical:12, borderRadius:12, backgroundColor:ACCENT, alignItems:'center' }}>
+                    <Text style={{ color:'#fff', fontWeight:'800' }}>바로 저장</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           </View>
@@ -266,7 +322,7 @@ export default function SnapScreen({ navigation }: any) {
                   <Text style={{ color:ACCENT, fontWeight:'800' }}>복사하기</Text>
                 </TouchableOpacity>
                 <TouchableOpacity onPress={openNaming} style={{ flex:1, paddingVertical:12, borderRadius:12, backgroundColor:ACCENT, alignItems:'center' }}>
-                  <Text style={{ color:'#fff', fontWeight:'800' }}>PDF 변환</Text>
+                  <Text style={{ color:'#fff', fontWeight:'800' }}>{file?.type==='pdf' ? '이름 저장' : 'PDF 변환'}</Text>
                 </TouchableOpacity>
               </View>
               <TouchableOpacity onPress={reset} style={{ marginTop:12, alignSelf:'center', paddingVertical:6, paddingHorizontal:10 }}>

@@ -651,7 +651,7 @@ export default function LoginScreen({ navigation }: Props) {
                   }}
                 >
                   <TextInput
-                    placeholder="******"
+                    placeholder="********"
                     placeholderTextColor="#9CA3AF"
                     secureTextEntry={!pwVisible}
                     value={password}
