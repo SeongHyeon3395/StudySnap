@@ -699,7 +699,7 @@ function PlanScreen() {
   );
 }
 
-function SettingsScreen() {
+function SettingsScreen({ navigation }: any) {
   const toastOpacity = React.useRef(new Animated.Value(0)).current;
   const [toast, setToast] = React.useState('');
   const width = Dimensions.get('window').width;
@@ -782,6 +782,10 @@ function SettingsScreen() {
     }, [sectionAnim])
   );
 
+  const [globalLogoutVisible, setGlobalLogoutVisible] = React.useState(false);
+
+  const handleGlobalLogout = () => { setGlobalLogoutVisible(true); };
+
   // 섹션별 렌더 (profileName 사용)
   const renderSection = (pName: string, pEmail: string) => {
     if (!renderingSection) return null;
@@ -799,13 +803,13 @@ function SettingsScreen() {
         {[
           { k:'연동 계정 관리', a:() => showToast('OAuth 연동 준비중') },
           { k:'비밀번호 변경', a:() => showToast('비밀번호 변경 준비중') },
-          { k:'모든 기기 로그아웃', a:() => showToast('전체 로그아웃 준비중') },
+          { k:'모든 기기 로그아웃', a:handleGlobalLogout },
         ].map(item => (
           <TouchableOpacity key={item.k} onPress={item.a} style={{ paddingVertical:10 }}>
             <Text style={{ color: INK, fontSize:13, fontWeight:'600' }}>{item.k}</Text>
           </TouchableOpacity>
         ))}
-  <View style={{ paddingVertical:10, flexDirection:'row', alignItems:'center', justifyContent:'space-between' }}>
+        <View style={{ paddingVertical:10, flexDirection:'row', alignItems:'center', justifyContent:'space-between' }}>
           <Text style={{ color: INK, fontSize:13, fontWeight:'600' }}>앱 잠금 (지문/Face ID)</Text>
           <Toggle value={appLock} onToggle={()=>setAppLock(v=>!v)} />
         </View>
@@ -814,7 +818,7 @@ function SettingsScreen() {
         </TouchableOpacity>
       </Card>
     );
-  if (renderingSection === 'subscription') return (
+    if (renderingSection === 'subscription') return (
       <Card>
         <View style={{ flexDirection:'row', alignItems:'center', marginBottom:10 }}>
           <Text style={{ color: INK, fontSize:14, fontWeight:'800', flex:1 }}>현재 구독플랜</Text>
@@ -929,6 +933,8 @@ function SettingsScreen() {
     const sub = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
     return () => sub.remove();
   }, [renderingSection, goBack]);
+  const [showLogoutConfirm, setShowLogoutConfirm] = React.useState(false);
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: BG }}>
       <StatusBar barStyle="dark-content" backgroundColor={BG} />
@@ -937,7 +943,7 @@ function SettingsScreen() {
         {/* 루트 목록 */}
         <ScrollView
           style={{ flex:1 }}
-          contentContainerStyle={{ paddingBottom:120 }}
+          contentContainerStyle={{ paddingBottom:160 }}
           showsVerticalScrollIndicator={false}
           pointerEvents={section ? 'none':'auto'}
         >
@@ -968,12 +974,20 @@ function SettingsScreen() {
               </TouchableOpacity>
             ))}
           </View>
+          {/* 로그아웃 버튼 (루트에서만 표시) */}
+          {!section && (
+            <View style={{ marginTop:30, paddingHorizontal:20 }}>
+              <TouchableOpacity onPress={()=> setShowLogoutConfirm(true)} style={{ backgroundColor:'#FFF', borderWidth:1, borderColor:BORDER, borderRadius:14, paddingVertical:16, alignItems:'center' }}>
+                <Text style={{ fontSize:14, fontWeight:'800', color:DANGER }}>로그아웃</Text>
+              </TouchableOpacity>
+            </View>
+          )}
           <View style={{ marginTop:40, alignItems:'center' }}>
             <Text style={{ fontSize:11, color:SUBTLE, fontWeight:'600' }}>버전 1.0.0</Text>
           </View>
         </ScrollView>
         {/* 섹션 화면 (슬라이드) */}
-    {renderingSection && (
+        {renderingSection && (
           <Animated.View
             style={{
               position:'absolute',
@@ -995,6 +1009,29 @@ function SettingsScreen() {
           </Animated.View>
         )}
       </View>
+      {/* 확인 모달 */}
+      <Modal animationType="fade" transparent visible={showLogoutConfirm} onRequestClose={()=> setShowLogoutConfirm(false)}>
+        <View style={{ flex:1, backgroundColor:'rgba(0,0,0,0.28)', justifyContent:'center', padding:28 }}>
+          <View style={{ backgroundColor:SURFACE, borderRadius:22, borderWidth:1, borderColor:BORDER, padding:24 }}>
+            <Text style={{ fontSize:16, fontWeight:'900', color:INK }}>로그아웃 하시겠어요?</Text>
+            <Text style={{ fontSize:12, color:SUBTLE, marginTop:10, lineHeight:18 }}>현재 계정에서 로그아웃되며 다시 로그인 하려면 전화번호 인증이 필요할 수 있어요.</Text>
+            <View style={{ flexDirection:'row', marginTop:26 }}>
+              <TouchableOpacity onPress={()=> setShowLogoutConfirm(false)} style={{ flex:1, paddingVertical:12, borderRadius:12, backgroundColor:ACCENT_SOFT, borderWidth:1, borderColor:BORDER, alignItems:'center', marginRight:10 }}>
+                <Text style={{ fontSize:13, fontWeight:'800', color:ACCENT }}>취소</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={async ()=> {
+                try {
+                  await supabase.auth.signOut();
+                  setShowLogoutConfirm(false);
+                  navigation.reset({ index:0, routes:[{ name:'Login' }] });
+                } catch (e) { setShowLogoutConfirm(false); }
+              }} style={{ flex:1, paddingVertical:12, borderRadius:12, backgroundColor:DANGER, alignItems:'center' }}>
+                <Text style={{ fontSize:13, fontWeight:'800', color:'#FFF' }}>로그아웃</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       <Animated.View pointerEvents={toast ? 'auto' : 'none'} style={{ position:'absolute', bottom:90, left:0, right:0, alignItems:'center', opacity:toastOpacity }}>
         <View style={{ backgroundColor: SURFACE, borderRadius:14, borderWidth:1, borderColor:BORDER, paddingHorizontal:16, paddingVertical:12, ...SHADOW, maxWidth:'80%' }}>
           <Text style={{ color: INK, fontSize:13, fontWeight:'600' }}>{toast}</Text>

@@ -35,6 +35,7 @@ export default function SnapScreen({ navigation }: any) {
   const [extracting, setExtracting] = useState(false);
   const scanAnim = useRef(new Animated.Value(0)).current;
   const [extractedText, setExtractedText] = useState<string | null>(null);
+  const [noTextFound, setNoTextFound] = useState(false);
   const [namingVisible, setNamingVisible] = useState(false);
   const [pdfName, setPdfName] = useState('스냅_노트');
   const [converting, setConverting] = useState(false);
@@ -161,16 +162,23 @@ export default function SnapScreen({ navigation }: any) {
   const reset = () => {
     setFile(null);
     setExtractedText(null);
+    setNoTextFound(false);
   };
 
   const startExtract = async () => {
     if (!file || file.type !== 'image') return;
     setExtracting(true);
     setExtractedText(null);
+    setNoTextFound(false);
     try {
       const base64 = await fileToBase64FromUri(file.uri);
       const text = await extractTextWithGemini(base64);
-      setExtractedText(text || '(인식된 텍스트 없음)');
+      if (!text || !text.trim()) {
+        setNoTextFound(true);
+        setExtractedText(null);
+      } else {
+        setExtractedText(text.trim());
+      }
     } catch (e:any) {
       showAlert('추출 실패', e.message || '텍스트 추출 중 오류');
     } finally {
@@ -195,8 +203,9 @@ export default function SnapScreen({ navigation }: any) {
       }
       const path = await uploadPdfToLibrary(pdfName, bytes);
       setConverting(false);
-      showAlert('PDF 저장 완료', `자료함에 저장되었습니다.\n${path}`);
-      reset();
+      showAlert('PDF 저장 완료', '자료함에 저장되었습니다.', [
+        { text:'확인', onPress: () => { reset(); } }
+      ]);
     } catch (e:any) {
       setConverting(false);
       showAlert('저장 실패', e.message || String(e));
@@ -318,25 +327,36 @@ export default function SnapScreen({ navigation }: any) {
                 <Text style={{ fontSize:13, lineHeight:20, color:INK }}>{extractedText}</Text>
               </ScrollView>
               <View style={{ flexDirection:'row', marginTop:14 }}>
-                <TouchableOpacity onPress={()=>{ if(extractedText) { showAlert('복사됨', '클립보드에 복사되었습니다.'); } }} style={{ flex:1, paddingVertical:12, borderRadius:12, backgroundColor:ACCENT_SOFT, borderWidth:1, borderColor:BORDER, alignItems:'center', marginRight:8 }}>
+                <TouchableOpacity disabled={!extractedText} onPress={()=>{ if(extractedText) { showAlert('복사됨', '클립보드에 복사되었습니다.'); } }} style={{ flex:1, paddingVertical:12, borderRadius:12, backgroundColor:ACCENT_SOFT, borderWidth:1, borderColor:BORDER, alignItems:'center', marginRight:8, opacity: extractedText?1:0.4 }}>
                   <Text style={{ color:ACCENT, fontWeight:'800' }}>복사하기</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={openNaming} style={{ flex:1, paddingVertical:12, borderRadius:12, backgroundColor:ACCENT, alignItems:'center' }}>
+                <TouchableOpacity disabled={!extractedText} onPress={openNaming} style={{ flex:1, paddingVertical:12, borderRadius:12, backgroundColor:ACCENT, alignItems:'center', opacity: extractedText?1:0.4 }}>
                   <Text style={{ color:'#fff', fontWeight:'800' }}>{file?.type==='pdf' ? '이름 저장' : 'PDF 변환'}</Text>
                 </TouchableOpacity>
               </View>
-              <TouchableOpacity onPress={reset} style={{ marginTop:12, alignSelf:'center', paddingVertical:6, paddingHorizontal:10 }}>
-                <Text style={{ fontSize:11, color:SUBTLE }}>다시 시작</Text>
+              <TouchableOpacity onPress={startExtract} style={{ marginTop:12, alignSelf:'stretch', paddingVertical:12, borderRadius:12, backgroundColor:'#EEF1F6', alignItems:'center' }}>
+                <Text style={{ fontSize:12, fontWeight:'700', color:SUBTLE }}>다시 추출하기</Text>
               </TouchableOpacity>
             </View>
           </View>
         )}
 
-        {converting && (
-          <View style={{ marginTop:40, alignItems:'center' }}>
-            <View style={{ width:200, height:200, borderRadius:20, backgroundColor:SURFACE, borderWidth:1, borderColor:BORDER, alignItems:'center', justifyContent:'center', ...SHADOW }}>
-              <ActivityIndicator color={ACCENT} size="large" />
-              <Text style={{ marginTop:12, fontSize:13, color:SUBTLE, fontWeight:'600' }}>PDF 변환중...</Text>
+        {noTextFound && !extracting && !extractedText && file && (
+          <View>
+            <Text style={{ fontSize:15, fontWeight:'800', color:INK, marginBottom:12 }}>추출 결과</Text>
+            <View style={{ backgroundColor:SURFACE, borderWidth:1, borderColor:BORDER, borderRadius:18, padding:28, alignItems:'center', ...SHADOW }}>
+              <MaterialIcons name="search-off" size={46} color={SUBTLE} />
+              <Text style={{ fontSize:14, fontWeight:'800', color:INK, marginTop:14 }}>텍스트를 찾을 수 없어요</Text>
+              <Text style={{ fontSize:12, color:SUBTLE, marginTop:8, lineHeight:18, textAlign:'center' }}>이미지 품질이 낮거나 텍스트가 포함되지 않은 이미지일 수 있어요.
+다른 각도나 더 선명한 사진으로 시도해 보세요.</Text>
+              <View style={{ flexDirection:'row', marginTop:24 }}>
+                <TouchableOpacity onPress={startExtract} style={{ flex:1, paddingVertical:12, borderRadius:12, backgroundColor:ACCENT, alignItems:'center' }}>
+                  <Text style={{ color:'#fff', fontWeight:'800' }}>다시 추출하기</Text>
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity onPress={reset} style={{ marginTop:14 }}>
+                <Text style={{ fontSize:12, color:SUBTLE }}>처음으로</Text>
+              </TouchableOpacity>
             </View>
           </View>
         )}
